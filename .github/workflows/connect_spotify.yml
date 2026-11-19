@@ -18,19 +18,17 @@ jobs:
       actions: write
     steps:
       - name: Hide the code in logs
-        env:
-          CODE: ${{ inputs.code }}
-        run: echo "::add-mask::$CODE"
+        # Read from the event file, not env:, because Actions prints a step's env block before it runs.
+        run: echo "::add-mask::$(jq -r '.inputs.code' "$GITHUB_EVENT_PATH")"
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       - name: Trade the code for a sign-in token
         env:
-          CODE: ${{ inputs.code }}
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           OUT_FILE: ${{ runner.temp }}/refresh
-        run: node src/connect.mjs
+        run: CODE=$(jq -r '.inputs.code' "$GITHUB_EVENT_PATH") node src/connect.mjs
       - name: Save it as a secret
         env:
           GH_TOKEN: ${{ secrets.ARTIST_MAP_SECRETS_TOKEN }}

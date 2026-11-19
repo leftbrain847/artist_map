@@ -40,6 +40,7 @@ jobs:
           NEW_REFRESH_FILE: ${{ runner.temp }}/new_refresh
         run: node src/build.mjs
       - name: Save Spotify's replacement sign-in token, if it sent one
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.ARTIST_MAP_SECRETS_TOKEN }}
           FILE: ${{ runner.temp }}/new_refresh
@@ -52,6 +53,13 @@ jobs:
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
+      - name: Keep the page for the snapshot job
+        if: github.event_name == 'workflow_dispatch' && inputs.snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: map_page
+          path: dist/index.html
+          retention-days: 1
 
   deploy:
     needs: build
@@ -78,32 +86,31 @@ jobs:
       - env:
           BY: ${{ needs.build.outputs.reconnect_by }}
         run: |
-          echo "::error::The Spotify sign-in expires around $BY. Open the map's connect page and sign in again."
+          echo "::error::The Spotify sign-in expires around $BY. Reconnect at https://leftbrain847.github.io/artist_map/connect.html"
           exit 1
 
-  # On request: rebuild and freeze today's page as the sprint snapshot, on a branch J's session turns into a PR.
+  # On request: freeze tonight's built page as the sprint snapshot, on a branch that becomes a PR.
+  # Reuses the build job's page, so no secrets are used here.
   snapshot:
     needs: build
     if: github.event_name == 'workflow_dispatch' && inputs.snapshot && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - name: Build the map
-        env:
-          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
-          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
-          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
-          SPOTIFY_CONNECTED_AT: ${{ secrets.SPOTIFY_CONNECTED_AT }}
-          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-        run: node src/build.mjs
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: map_page
+          path: ${{ runner.temp }}/page
       - name: Freeze it on a branch
+        env:
+          PAGE: ${{ runner.temp }}/page/index.html
         run: |
-          node scripts/snapshot.mjs dist/index.html
-          day=$(TZ=America/New_York date +%F)
-          git switch -c "snapshot_$day"
+          node scripts/snapshot.mjs "$PAGE"
+          branch="snapshot_$(TZ=America/New_York date +%F)_$GITHUB_RUN_NUMBER"
+          git switch -c "$branch"
           git add snapshots
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Sprint snapshot $day"
-          git push origin "snapshot_$day"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Sprint snapshot"
+          git push origin "$branch"
