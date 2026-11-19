@@ -1,0 +1,49 @@
+{
+  "$comment": "Every tunable for the artist map. Code reads these; nothing here is secret.",
+  "spotify": {
+    "authorize_url": "https://accounts.spotify.com/authorize",
+    "token_url": "https://accounts.spotify.com/api/token",
+    "api": "https://api.spotify.com/v1",
+    "scopes": ["user-library-read", "user-follow-read", "user-top-read"],
+    "redirect_uri": "https://leftbrain847.github.io/artist_map/callback.html",
+    "page_size": 50,
+    "saved_tracks_max": 2000,
+    "top_ranges": ["short_term", "medium_term", "long_term"],
+    "reconnect_warn_days": 150,
+    "reconnect_due_days": 170,
+    "max_retries": 4
+  },
+  "lastfm": {
+    "api": "https://ws.audioscrobbler.com/2.0/",
+    "similar_limit": 40,
+    "min_match": 0.12,
+    "tag_skip": ["seen live", "favorites", "favourite", "albums i own", "spotify", "under 2000 listeners", "all"],
+    "pause_ms": 220,
+    "max_retries": 3
+  },
+  "weights": {
+    "saved_track": 1,
+    "followed": 6,
+    "top": { "short_term": 3, "medium_term": 4, "long_term": 5 }
+  },
+  "graph": {
+    "max_library_nodes": 220,
+    "recommend_count": 15,
+    "recommend_min_links": 2,
+    "max_tags": 9,
+    "layout_iterations": 350,
+    "seed": 19
+  },
+  "page": {
+    "title": "Artist Map",
+    "time_zone": "America/New_York",
+    "subtitle": "My saved Spotify artists, linked by Last.fm similarity",
+    "point_min": 2.5,
+    "point_max": 11,
+    "label_top": 30,
+    "auto_rotate": 0.0018,
+    "palette": ["#7aa2f7", "#f7768e", "#9ece6a", "#e0af68", "#bb9af7", "#7dcfff", "#ff9e64", "#73daca", "#c0caf5"],
+    "other_color": "#565f89",
+    "rec_color": "#ffffff"
+  }
+}
