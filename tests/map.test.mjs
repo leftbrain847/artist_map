@@ -1,0 +1,114 @@
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildGraph, keyOf } from '../src/graph.mjs';
+import { assertPublicSafe, assertNoSecrets } from '../src/privacy.mjs';
+import { spotifyToken, spotifyLibrary, lastfm, SourceError } from '../src/sources.mjs';
+import { build, loadConfig, reconnectState } from '../src/build.mjs';
+import { connect } from '../src/connect.mjs';
+
+const cfg = loadConfig();
+const fixture = JSON.parse(readFileSync(new URL('./fixtures/sample.json', import.meta.url)));
+const out = () => mkdtempSync(join(tmpdir(), 'am-'));
+const res = (body, status = 200) => ({ ok: status < 400, status, headers: { get: () => null }, json: async () => body });
+
+test('graph: same input, same map; recommendations need several links', () => {
+  const a = buildGraph(fixture, cfg), b = buildGraph(fixture, cfg);
+  assert.deepEqual(a, b);
+  assert.ok(a.because.length > 0 && a.because.length <= cfg.graph.recommend_count);
+  for (const r of a.because) {
+    assert.ok(a.nodes[r.i].r);
+    assert.ok(r.from.length >= cfg.graph.recommend_min_links);
+    assert.ok(r.from.every((j) => !a.nodes[j].r));
+  }
+  const lib = new Set(fixture.library.map((x) => keyOf(x.name)));
+  assert.ok(a.nodes.filter((n) => n.r).every((n) => !lib.has(keyOf(n.n))), 'never recommends what is already saved');
+  assert.ok(!a.tags.includes('seen live'), 'junk tags are skipped');
+});
+
+test('privacy: only allowed fields, nothing token-shaped', () => {
+  const g = buildGraph(fixture, cfg);
+  assert.doesNotThrow(() => assertPublicSafe({ ...g, built: '2026-11-19' }));
+  assert.throws(() => assertPublicSafe({ ...g, playcount: 3 }), /unexpected field/);
+  assert.throws(() => assertPublicSafe({ ...g, nodes: [{ ...g.nodes[0], id: '4Z8W4fKeB5YxbusRsdQVPb' }] }), /unexpected node field/);
+  assert.throws(() => assertPublicSafe({ ...g, nodes: [{ ...g.nodes[0], p: ['BQDa8f7s9d8f7as9d8f7as9d8f7a9s8d7f9a8s7df', 0, 0] }] }), /token-shaped/);
+  assert.doesNotThrow(() => assertPublicSafe({ ...g, nodes: [{ ...g.nodes[0], n: 'Supercalifragilisticexpialidocious_and_more_letters_here' }] }), 'a long artist name alone is not a leak');
+  assert.throws(() => assertPublicSafe({ ...g, tags: ['x'.repeat(41)] }), /tag is not a short string/);
+  assert.throws(() => assertNoSecrets('page with s3cr3t-value inside', ['s3cr3t-value']), /secret value/);
+});
+
+test('build: fixture run writes self-contained pages with no outside loads', async () => {
+  const dir = out();
+  const r = await build({ fixture, outDir: dir, env: { SPOTIFY_CONNECTED_AT: '2026-11-19' }, now: Date.parse('2026-11-20T03:00:00Z') });
+  assert.deepEqual(readdirSync(dir).sort(), ['.nojekyll', 'callback.html', 'connect.html', 'index.html']);
+  assert.equal(r.data.built, '2026-11-19', 'dated in Eastern time');
+  for (const f of ['index.html', 'connect.html', 'callback.html']) {
+    const html = readFileSync(join(dir, f), 'utf8');
+    assert.ok(!/<(script|link|img)[^>]+(src|href)=["']?https?:/i.test(html), `${f} loads nothing from outside`);
+    assert.ok(!/fetch\(|XMLHttpRequest/.test(html), `${f} makes no network calls`);
+  }
+});
+
+test('build: a hostile artist name stays text inside the data block', async () => {
+  const dir = out();
+  const evil = '</script><img src=x onerror=alert(1)>';
+  const f = { ...fixture, library: [...fixture.library, { name: evil, weight: 99 }] };
+  await build({ fixture: f, outDir: dir, env: {} });
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  assert.ok(!html.includes(evil));
+  const block = html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/)[1];
+  assert.ok(JSON.parse(block).nodes.some((n) => n.n === evil), 'the name survives as data');
+});
+
+test('build: not connected publishes the connect page only, with no secret in it', async () => {
+  const dir = out();
+  const r = await build({ outDir: dir, env: { SPOTIFY_CLIENT_ID: 'abc123publicid', SPOTIFY_CLIENT_SECRET: 'supersecretvalue', LASTFM_API_KEY: 'lastfmkeyvalue' } });
+  assert.equal(r.connected, false);
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  assert.ok(html.includes('abc123publicid'));
+  assert.ok(!html.includes('supersecretvalue') && !html.includes('lastfmkeyvalue'));
+});
+
+test('reconnect: warns at 150 days, due at 170', () => {
+  const at = (d) => Date.parse('2026-11-19T12:00:00Z') + d * 864e5;
+  assert.equal(reconnectState('2026-11-19', cfg, at(10)).state, 'ok');
+  assert.equal(reconnectState('2026-11-19', cfg, at(155)).state, 'soon');
+  assert.equal(reconnectState('2026-11-19', cfg, at(171)).state, 'due');
+  assert.equal(reconnectState('', cfg).state, 'unknown');
+});
+
+test('spotify: reports a rotated token, pages through the library, never echoes bodies in errors', async () => {
+  const tok = await spotifyToken({ clientId: 'a', clientSecret: 'b', refreshToken: 'old' }, cfg, async () => res({ access_token: 'acc', refresh_token: 'new' }));
+  assert.deepEqual(tok, { accessToken: 'acc', newRefreshToken: 'new' });
+  const same = await spotifyToken({ clientId: 'a', clientSecret: 'b', refreshToken: 'old' }, cfg, async () => res({ access_token: 'acc' }));
+  assert.equal(same.newRefreshToken, null);
+
+  const pages = {
+    '/me/tracks?limit=50': { items: [{ track: { artists: [{ name: 'A' }, { name: 'B' }] } }], next: 'https://api.spotify.com/v1/me/tracks?offset=50' },
+    '/me/tracks?offset=50': { items: [{ track: { artists: [{ name: 'A' }] } }], next: null },
+    '/me/following?type=artist&limit=50': { artists: { items: [{ name: 'C' }], next: null } },
+  };
+  const f = async (url) => {
+    const u = new URL(url); const path = u.pathname.replace('/v1', '') + u.search;
+    return res(pages[path] ?? { items: path.includes('long_term') ? [{ name: 'A' }] : [] });
+  };
+  const lib = Object.fromEntries((await spotifyLibrary('acc', cfg, f)).map((a) => [a.name, a.weight]));
+  assert.deepEqual(lib, { A: 2 + cfg.weights.top.long_term, B: 1, C: cfg.weights.followed });
+
+  await assert.rejects(spotifyToken({ clientId: 'a', clientSecret: 'b', refreshToken: 'r' }, cfg, async () => res({ error: 'invalid_grant', secret: 'zzz' }, 400)),
+    (e) => e instanceof SourceError && !e.message.includes('zzz') && !e.message.includes('invalid_grant'));
+});
+
+test('last.fm: unknown artists are skipped, the key never appears in an error', async () => {
+  assert.equal(await lastfm('artist.getsimilar', 'Nobody', 'KEY', cfg, async () => res({ error: 6 })), null);
+  await assert.rejects(lastfm('artist.getsimilar', 'X', 'MYKEY123', { ...cfg, lastfm: { ...cfg.lastfm, max_retries: 0 } }, async () => res({}, 403)),
+    (e) => !e.message.includes('MYKEY123'));
+});
+
+test('connect: rejects junk codes before calling Spotify', async () => {
+  let called = false;
+  await assert.rejects(connect({ CODE: 'not a code!', OUT_FILE: '/tmp/x' }, async () => { called = true; }), /does not look like/);
+  assert.equal(called, false);
+});
