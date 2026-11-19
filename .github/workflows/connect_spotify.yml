@@ -1,0 +1,45 @@
+# One-time Spotify sign-in. J pastes the code from callback.html; this trades it for a long-lived,
+# read-only token and stores it as a secret. The code is useless without the client secret and dies once used.
+name: connect_spotify
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: "The code shown on the callback page"
+        required: true
+        type: string
+permissions: {}
+jobs:
+  connect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Hide the code in logs
+        env:
+          CODE: ${{ inputs.code }}
+        run: echo "::add-mask::$CODE"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Trade the code for a sign-in token
+        env:
+          CODE: ${{ inputs.code }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          OUT_FILE: ${{ runner.temp }}/refresh
+        run: node src/connect.mjs
+      - name: Save it as a secret
+        env:
+          GH_TOKEN: ${{ secrets.ARTIST_MAP_SECRETS_TOKEN }}
+          FILE: ${{ runner.temp }}/refresh
+        run: |
+          gh secret set SPOTIFY_REFRESH_TOKEN --repo "$GITHUB_REPOSITORY" < "$FILE"
+          TZ=America/New_York date +%F | gh secret set SPOTIFY_CONNECTED_AT --repo "$GITHUB_REPOSITORY"
+          rm -f "$FILE"
+      - name: Rebuild the map now
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref main
