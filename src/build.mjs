@@ -35,6 +35,7 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
   const secrets = [env.SPOTIFY_CLIENT_SECRET, env.SPOTIFY_REFRESH_TOKEN, env.LASTFM_API_KEY];
   secrets.forEach(mask);
   const callback = renderCallback(cfg);
+  const connectPage = renderSetup(env.SPOTIFY_CLIENT_ID, cfg);
 
   let library, lf;
   if (fixture) {
@@ -42,7 +43,7 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
     lf = { similar: fixture.similar, tags: fixture.tags };
   } else {
     if (!env.SPOTIFY_REFRESH_TOKEN) {
-      writeSite(outDir, { 'index.html': renderSetup(env.SPOTIFY_CLIENT_ID, cfg), 'callback.html': callback }, secrets);
+      writeSite(outDir, { 'index.html': connectPage, 'connect.html': connectPage, 'callback.html': callback }, secrets);
       console.log('not connected yet: published the connect page');
       return { connected: false };
     }
@@ -58,9 +59,9 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
   const g = buildGraph({ library, similar: lf.similar, tags: lf.tags }, cfg);
   const rc = reconnectState(env.SPOTIFY_CONNECTED_AT, cfg, now);
   const data = assertPublicSafe({ ...g, built: new Intl.DateTimeFormat('en-CA', { timeZone: cfg.page.time_zone }).format(new Date(now)), ...(rc.by ? { reconnect_by: rc.by } : {}) });
-  writeSite(outDir, { 'index.html': renderMap(data, cfg), 'callback.html': callback }, secrets);
+  writeSite(outDir, { 'index.html': renderMap(data, cfg), 'connect.html': connectPage, 'callback.html': callback }, secrets);
   console.log(`built: ${library.length} artists in library, ${g.nodes.length} on the map, ${g.edges.length} links, ${g.because.length} to try`);
-  if (rc.state === 'soon') console.log(`::warning::Spotify sign-in expires around ${rc.by}. Reconnect from the map page before then.`);
+  if (rc.state === 'soon') console.log(`::warning::Spotify sign-in expires around ${rc.by}. Reconnect at https://leftbrain847.github.io/artist_map/connect.html before then.`);
   if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `reconnect=${rc.state}\nreconnect_by=${rc.by ?? ''}\n`);
   return { connected: true, data, reconnect: rc };
 }

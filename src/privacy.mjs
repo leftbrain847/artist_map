@@ -19,7 +19,10 @@ export function assertPublicSafe(data) {
   for (const e of data.edges) if (e.length !== 3 || !e.every((x) => typeof x === 'number')) bad('edge is not [i, j, match]');
   if (data.built && !/^\d{4}-\d{2}-\d{2}$/.test(data.built)) bad('built is not a date');
   if (data.reconnect_by && !/^\d{4}-\d{2}-\d{2}$/.test(data.reconnect_by)) bad('reconnect_by is not a date');
-  if (TOKENISH.test(JSON.stringify(data))) bad('something token-shaped is in the output');
+  for (const t of data.tags) if (typeof t !== 'string' || t.length > 40) bad('tag is not a short string');
+  // Names come from Spotify and tags from Last.fm; everything else is ours, so a token-shaped run there means a leak.
+  const { nodes, tags, ...rest } = data;
+  if (TOKENISH.test(JSON.stringify(rest)) || nodes.some((nd) => TOKENISH.test(JSON.stringify({ ...nd, n: '' })))) bad('something token-shaped is in the output');
   return data;
 }
 

@@ -47,7 +47,7 @@ export function buildGraph({ library, similar, tags }, cfg) {
 
   // Colour by each artist's leading Last.fm tag; the most common tags get colours, the rest are "other".
   const skip = new Set(cfg.lastfm.tag_skip.map(keyOf));
-  const first = nodes.map((n) => (tags[n.key] ?? []).map(keyOf).find((t) => t && !skip.has(t)) ?? null);
+  const first = nodes.map((n) => (tags[n.key] ?? []).map(keyOf).find((t) => t && t.length <= 40 && !skip.has(t)) ?? null);
   const counts = new Map();
   first.forEach((t) => t && counts.set(t, (counts.get(t) ?? 0) + 1));
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, g.max_tags).map(([t]) => t);

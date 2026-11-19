@@ -15,16 +15,22 @@ export function renderMap(data, cfg) {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${esc(pg.title)}</title>
 <style>${BASE_CSS}
-#wrap{position:relative;height:62vh;min-height:340px;touch-action:none}canvas{width:100%;height:100%;display:block}
-#info{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(20,24,38,.92);border-radius:12px;padding:10px 12px;font-size:14px;display:none}
-#legend{display:flex;flex-wrap:wrap;gap:6px 12px;padding:8px 16px;font-size:12px;color:var(--dim)}#legend span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;background:var(--c)}
-section{padding:4px 16px 20px}h2{font-size:16px;margin:12px 0 6px}ol{margin:0;padding-left:20px}li{margin:4px 0}li small{color:var(--dim)}
-footer{padding:10px 16px 24px;color:var(--dim);font-size:12px}button{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer}
+body{background:radial-gradient(120% 80% at 50% 30%,#121626 0%,#0b0d14 60%,#07080d 100%) fixed}
+header{padding:22px 22px 0;text-align:center}h1{font-weight:300;font-size:15px;letter-spacing:.32em;text-transform:uppercase;color:#d8dcf5}
+header p{font-size:12px;letter-spacing:.04em;margin-top:6px}
+#wrap{position:relative;height:72vh;min-height:360px;touch-action:none}canvas{width:100%;height:100%;display:block}
+#info{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;width:min(92%,420px);background:rgba(14,17,28,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px 14px;font-size:14px;text-align:center;display:none}
+#info div:first-child{font-weight:500;letter-spacing:.02em}#info div+div{color:var(--dim);font-size:12.5px;margin-top:3px}
+#legend{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;padding:4px 22px 6px;font-size:11px;letter-spacing:.08em;text-transform:lowercase;color:var(--dim)}#legend span:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:var(--c);box-shadow:0 0 8px var(--c)}
+section{max-width:460px;margin:0 auto;padding:18px 22px 8px}h2{font-weight:300;font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--dim);text-align:center;margin:8px 0 12px}
+ol{list-style:none;margin:0;padding:0}li{padding:10px 2px;border-top:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column}li:last-child{border-bottom:1px solid rgba(255,255,255,.05)}
+li button{font-size:15px;color:#e6e9ff}li small{color:var(--dim);font-size:12px;margin-top:2px}
+footer{padding:22px;color:#4a5072;font-size:11px;letter-spacing:.06em;text-align:center}button{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer}
 </style></head><body>
-<header><h1>${esc(pg.title)}</h1><p>${esc(pg.subtitle)}. Drag to turn, pinch to zoom, tap a dot.</p></header>
+<header><h1>${esc(pg.title)}</h1><p>${esc(pg.subtitle)}</p></header>
 <div id="wrap"><canvas id="c"></canvas><div id="info"></div></div>
 <div id="legend"></div>
-<section><h2>Artists to try</h2><ol id="recs"></ol></section>
+<section><h2>To try</h2><ol id="recs"></ol></section>
 <footer id="foot"></footer>
 <script id="data" type="application/json">${jsonForScript(data)}</script>
 <script id="cfg" type="application/json">${jsonForScript(pg)}</script>
@@ -44,32 +50,59 @@ footer{padding:10px 16px 24px;color:var(--dim);font-size:12px}button{font:inheri
     const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
     const x = p[0] * cy - p[2] * sy, z1 = p[0] * sy + p[2] * cy;
     const y = p[1] * cp - z1 * sp, z = p[1] * sp + z1 * cp;
-    const f = 340 / (340 + z) * zoom * Math.min(W, H) / 230;
+    const f = 340 / (340 + z) * zoom * Math.min(W, H) / 190;
     return [W / 2 + x * f, H / 2 + y * f, z, f];
   }
   let proj = [];
+  // Each genre region is a soft glowing cloud around its artists; edges only show for the tapped artist.
+  const regions = D.tags.map((t, k) => {
+    const pts = D.nodes.filter((n) => n.t === k && !n.r).map((n) => n.p);
+    if (!pts.length) return null;
+    const c = [0, 1, 2].map((d) => pts.reduce((a, p) => a + p[d], 0) / pts.length);
+    const spread = Math.sqrt(pts.reduce((a, p) => a + (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2, 0) / pts.length) || 10;
+    return { k, c, spread, name: t };
+  }).filter(Boolean);
+  const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return 'rgba(' + (v >> 16) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + a + ')'; };
+  function glow(x, y, r, hex, a) {
+    const g = cx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, rgba(hex, a)); g.addColorStop(1, rgba(hex, 0));
+    cx.fillStyle = g; cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill();
+  }
   function draw() {
     if (!drag && !pinch && sel < 0) yaw += P.auto_rotate;
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
     proj = D.nodes.map((n) => project(n.p));
-    cx.lineWidth = 0.6;
-    for (const [i, j, m] of D.edges) {
-      const on = sel >= 0 && (i === sel || j === sel);
-      cx.strokeStyle = on ? 'rgba(255,255,255,.75)' : 'rgba(150,160,210,' + (0.06 + m * 0.12) + ')';
-      cx.beginPath(); cx.moveTo(proj[i][0], proj[i][1]); cx.lineTo(proj[j][0], proj[j][1]); cx.stroke();
+    const faded = sel >= 0 ? 0.35 : 1;
+    cx.globalCompositeOperation = 'lighter';
+    for (const g of regions) {
+      const p = project(g.c);
+      glow(p[0], p[1], g.spread * p[3] * P.region_scale, P.palette[g.k % P.palette.length], P.region_alpha * faded);
+    }
+    D.nodes.forEach((n, i) => {
+      const p = proj[i], r = (P.point_min + (P.point_max - P.point_min) * n.w) * p[3];
+      glow(p[0], p[1], r * P.halo_scale, colour(n), P.halo_alpha * faded);
+    });
+    cx.globalCompositeOperation = 'source-over';
+    if (sel >= 0) {
+      cx.lineWidth = 0.8; cx.strokeStyle = 'rgba(255,255,255,.55)';
+      for (const j of nbrs[sel]) { cx.beginPath(); cx.moveTo(proj[sel][0], proj[sel][1]); cx.lineTo(proj[j][0], proj[j][1]); cx.stroke(); }
     }
     const order = proj.map((p, i) => [p[2], i]).sort((a, b) => b[0] - a[0]);
     for (const [, i] of order) {
-      const n = D.nodes[i], p = proj[i], r = (P.point_min + (P.point_max - P.point_min) * n.w) * p[3] * 0.9;
+      const n = D.nodes[i], p = proj[i], r = (P.point_min + (P.point_max - P.point_min) * n.w) * p[3] * 0.6;
       const dim = sel >= 0 && i !== sel && !nbrs[sel].includes(i);
-      cx.globalAlpha = dim ? 0.25 : 1;
-      cx.fillStyle = colour(n); cx.beginPath(); cx.arc(p[0], p[1], Math.max(1.5, r), 0, 7); cx.fill();
-      if (n.r) { cx.strokeStyle = '#000'; cx.lineWidth = 1; cx.stroke(); }
-      if ((labelled.has(i) || n.r || i === sel || (sel >= 0 && nbrs[sel].includes(i))) && !dim) {
-        cx.fillStyle = '#e6e9ff'; cx.font = (i === sel ? '600 13px' : '11px') + ' system-ui'; cx.fillText(n.n, p[0] + r + 3, p[1] + 4);
-      }
+      cx.globalAlpha = dim ? 0.2 : 0.95;
+      cx.fillStyle = colour(n); cx.beginPath(); cx.arc(p[0], p[1], Math.max(1.2, r), 0, 7); cx.fill();
+      if (n.r) { cx.strokeStyle = 'rgba(0,0,0,.6)'; cx.lineWidth = 1; cx.stroke(); }
+      const show = sel >= 0 ? (i === sel || nbrs[sel].includes(i)) : labelled.has(i);
+      if (show && !dim) { cx.fillStyle = '#e6e9ff'; cx.font = (i === sel ? '600 13px' : '11px') + ' system-ui'; cx.fillText(n.n, p[0] + r + 3, p[1] + 4); }
     }
     cx.globalAlpha = 1;
+    if (sel < 0) for (const g of regions) {
+      const p = project(g.c);
+      cx.fillStyle = rgba(P.palette[g.k % P.palette.length], 0.9); cx.font = '700 12px system-ui'; cx.textAlign = 'center';
+      cx.fillText(g.name.toUpperCase(), p[0], p[1] - g.spread * p[3] * 0.9); cx.textAlign = 'start';
+    }
     requestAnimationFrame(draw);
   }
   function pick(x, y) {
@@ -84,9 +117,9 @@ footer{padding:10px 16px 24px;color:var(--dim);font-size:12px}button{font:inheri
     const tag = n.t >= 0 ? D.tags[n.t] : 'other';
     const near = nbrs[i].slice(0, 6).map((j) => D.nodes[j].n);
     info.textContent = '';
-    const h = document.createElement('div'); h.style.fontWeight = '600'; h.textContent = n.n + (n.r ? '  (try this)' : ''); info.append(h);
+    const h = document.createElement('div'); h.style.fontWeight = '600'; h.textContent = n.n; info.append(h);
     const t = document.createElement('div'); t.style.color = 'var(--dim)';
-    t.textContent = b ? 'Because you have ' + b.from.map((j) => D.nodes[j].n).join(', ') : tag + (near.length ? ' · near ' + near.join(', ') : '');
+    t.textContent = b ? 'to try · because of ' + b.from.map((j) => D.nodes[j].n).join(', ') : tag + (near.length ? ' · near ' + near.join(', ') : '');
     info.append(t); info.style.display = 'block';
   }
   cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId }; });
@@ -115,11 +148,11 @@ footer{padding:10px 16px 24px;color:var(--dim);font-size:12px}button{font:inheri
   D.because.forEach((b) => {
     const li = document.createElement('li'), btn = document.createElement('button'), sm = document.createElement('small');
     btn.textContent = D.nodes[b.i].n; btn.onclick = () => { show(b.i); scrollTo({ top: 0, behavior: 'smooth' }); };
-    sm.textContent = ' · like ' + b.from.slice(0, 3).map((j) => D.nodes[j].n).join(', ');
+    sm.textContent = 'like ' + b.from.slice(0, 3).map((j) => D.nodes[j].n).join(', ');
     li.append(btn, sm); ol.append(li);
   });
   const lib = D.nodes.filter((n) => !n.r).length;
-  document.getElementById('foot').textContent = lib + ' artists · built ' + D.built + ' from Spotify and Last.fm';
+  document.getElementById('foot').textContent = lib + ' artists  ·  drag to turn, tap to explore  ·  ' + D.built;
   addEventListener('resize', size); size(); draw();
 })();
 </script></body></html>
@@ -166,7 +199,8 @@ export function renderCallback(cfg) {
   if (q.get('error')) return say('Spotify said: ' + q.get('error') + '. Nothing was connected.');
   const code = q.get('code');
   if (!code) return say('No code here. Start from the map page.');
-  if (want && q.get('state') !== want) return say('This sign-in did not start from this browser, so it was ignored.');
+  try { sessionStorage.removeItem('artist_map_state'); } catch {}
+  if (!want || q.get('state') !== want) return say('This sign-in did not start from the connect page in this browser, so it was ignored. Start again from connect.html.');
   say('Copy this code, then open GitHub: Actions → connect_spotify → Run workflow, and paste it within 10 minutes.');
   const c = document.createElement('code'); c.textContent = code; m.append(c);
   const b = document.createElement('button'); b.textContent = 'Copy code';

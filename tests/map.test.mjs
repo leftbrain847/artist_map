@@ -33,16 +33,18 @@ test('privacy: only allowed fields, nothing token-shaped', () => {
   assert.doesNotThrow(() => assertPublicSafe({ ...g, built: '2026-11-19' }));
   assert.throws(() => assertPublicSafe({ ...g, playcount: 3 }), /unexpected field/);
   assert.throws(() => assertPublicSafe({ ...g, nodes: [{ ...g.nodes[0], id: '4Z8W4fKeB5YxbusRsdQVPb' }] }), /unexpected node field/);
-  assert.throws(() => assertPublicSafe({ ...g, nodes: [{ ...g.nodes[0], n: 'x'.repeat(10) + 'BQDa8f7s9d8f7as9d8f7as9d8f7a9s8d7f9a8s7df' }] }), /token-shaped/);
+  assert.throws(() => assertPublicSafe({ ...g, nodes: [{ ...g.nodes[0], p: ['BQDa8f7s9d8f7as9d8f7as9d8f7a9s8d7f9a8s7df', 0, 0] }] }), /token-shaped/);
+  assert.doesNotThrow(() => assertPublicSafe({ ...g, nodes: [{ ...g.nodes[0], n: 'Supercalifragilisticexpialidocious_and_more_letters_here' }] }), 'a long artist name alone is not a leak');
+  assert.throws(() => assertPublicSafe({ ...g, tags: ['x'.repeat(41)] }), /tag is not a short string/);
   assert.throws(() => assertNoSecrets('page with s3cr3t-value inside', ['s3cr3t-value']), /secret value/);
 });
 
 test('build: fixture run writes self-contained pages with no outside loads', async () => {
   const dir = out();
   const r = await build({ fixture, outDir: dir, env: { SPOTIFY_CONNECTED_AT: '2026-11-19' }, now: Date.parse('2026-11-20T03:00:00Z') });
-  assert.deepEqual(readdirSync(dir).sort(), ['.nojekyll', 'callback.html', 'index.html']);
+  assert.deepEqual(readdirSync(dir).sort(), ['.nojekyll', 'callback.html', 'connect.html', 'index.html']);
   assert.equal(r.data.built, '2026-11-19', 'dated in Eastern time');
-  for (const f of ['index.html', 'callback.html']) {
+  for (const f of ['index.html', 'connect.html', 'callback.html']) {
     const html = readFileSync(join(dir, f), 'utf8');
     assert.ok(!/<(script|link|img)[^>]+(src|href)=["']?https?:/i.test(html), `${f} loads nothing from outside`);
     assert.ok(!/fetch\(|XMLHttpRequest/.test(html), `${f} makes no network calls`);
