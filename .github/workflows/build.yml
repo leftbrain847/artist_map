@@ -25,6 +25,7 @@ jobs:
     outputs:
       reconnect: ${{ steps.build.outputs.reconnect }}
       reconnect_by: ${{ steps.build.outputs.reconnect_by }}
+      connected: ${{ steps.build.outputs.connected }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -40,7 +41,7 @@ jobs:
           NEW_REFRESH_FILE: ${{ runner.temp }}/new_refresh
         run: node src/build.mjs
       - name: Save Spotify's replacement sign-in token, if it sent one
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         env:
           GH_TOKEN: ${{ secrets.ARTIST_MAP_SECRETS_TOKEN }}
           FILE: ${{ runner.temp }}/new_refresh
@@ -54,7 +55,7 @@ jobs:
         with:
           path: dist
       - name: Keep the page for the snapshot job
-        if: github.event_name == 'workflow_dispatch' && inputs.snapshot
+        if: github.event_name == 'workflow_dispatch' && inputs.snapshot && steps.build.outputs.connected == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: map_page
@@ -93,7 +94,7 @@ jobs:
   # Reuses the build job's page, so no secrets are used here.
   snapshot:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.snapshot && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.snapshot && github.ref == 'refs/heads/main' && needs.build.outputs.connected == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -112,5 +113,6 @@ jobs:
           branch="snapshot_$(TZ=America/New_York date +%F)_$GITHUB_RUN_NUMBER"
           git switch -c "$branch"
           git add snapshots
+          if git diff --cached --quiet; then echo "snapshot unchanged"; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Sprint snapshot"
           git push origin "$branch"
