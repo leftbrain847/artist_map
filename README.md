@@ -1,6 +1,6 @@
-# PROJECT_NAME
+# artist_map
 
-One line: what this does and who it's for.
+J's saved Spotify artists as a 3D map. Last.fm similarity links them; artists linked to several of his become recommendations.
 
 ## Run
 ```
