@@ -32,6 +32,7 @@ footer{padding:22px;color:#4a5072;font-size:11px;letter-spacing:.06em;text-align
 .chips{display:flex;flex-wrap:wrap;justify-content:center;gap:7px}.chips.tray{padding-top:2px}
 .chip.add{opacity:.55;border-style:dashed}.chip.add:before{box-shadow:none}.chip.more{color:var(--dim);border-style:dashed}.chip.more:before{display:none}
 #legend .hint{font-size:11px;color:var(--dim);letter-spacing:.06em}
+#info .spot{display:inline-block;margin-top:10px;padding:6px 14px;border-radius:999px;border:1px solid rgba(29,185,84,.5);color:#1ed760;font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
 #info .x{position:absolute;top:6px;right:10px;font-size:18px;color:var(--dim);padding:2px 6px}
 #view{display:flex;align-items:center;justify-content:center;gap:10px;max-width:380px;margin:4px auto 8px;padding:0 18px}
 .vbtn{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.1);color:var(--fg);text-align:center;font-size:14px;line-height:1;flex:none}
@@ -132,38 +133,59 @@ const VIEW_JS = `function mountMap(D, P) {
     frame();
   }
 
-  // ---------- drawing ----------
-  let yaw = 0.4, pitch = -0.12, roll = 0, zoom = 1, spin = true, pan = [0, 0], mid = null, drag = null, pinch = null, twist = null, W = 0, H = 0, dpr = 1, proj = [];
-  // The camera eases toward whatever is shown, so a single genre fills the view instead of sitting off to one side.
-  const cam = { c: [0, 0, 0], rx: 50, ry: 100 }, camGoal = { c: [0, 0, 0], rx: 50, ry: 100 };
+  // ---------- camera ----------
+  // A free camera: it sits somewhere in the map and looks one way. One finger turns it, pinching flies it
+  // toward (or away from) the point between your fingers, two fingers slide it, twisting rolls it.
+  let yaw = 0.4, pitch = -0.12, roll = 0, spin = true, drag = null, pinch = null, twist = null, mid = null, touches = 0, W = 0, H = 0, dpr = 1, proj = [];
+  let C = [0, 0, -220], dist = 220, goal = null, F = 300;
+  const toWorld = (a, b, c) => {
+    const cr = Math.cos(roll), sr = Math.sin(roll), cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const x1 = a * cr + b * sr, y2 = -a * sr + b * cr;
+    const y = y2 * cp + c * sp, z1 = -y2 * sp + c * cp;
+    return [x1 * cy + z1 * sy, y, -x1 * sy + z1 * cy];
+  };
+  const fwd = () => toWorld(0, 0, 1);
   function frame() {
-    pan = [0, 0];
-    // With an artist tapped, close in on it and its links; otherwise fit everything shown.
-    if (sel >= 0) {
-      const ids = [sel].concat(nbrs[sel].filter(([j]) => vis[j]).map(([j]) => j));
-      const c = N[sel].p;
-      camGoal.c = c.slice();
-      camGoal.rx = Math.max(10, ...ids.map((i) => Math.hypot(N[i].p[0] - c[0], N[i].p[2] - c[2])));
-      camGoal.ry = Math.max(10, ...ids.map((i) => Math.abs(N[i].p[1] - c[1])));
-      zoom = 1; return;
-    }
-    const ids = lib.filter((i) => vis[i]);
+    // With an artist tapped, fly to it and its links; otherwise back off until everything shown fits.
+    const ids = sel >= 0 ? [sel].concat(nbrs[sel].filter(([j]) => vis[j]).map(([j]) => j)) : lib.filter((i) => vis[i]);
     if (!ids.length) return;
-    const c = [0, 1, 2].map((d) => ids.reduce((a, i) => a + N[i].p[d], 0) / ids.length);
-    camGoal.c = c;
-    camGoal.rx = Math.max(12, ...ids.map((i) => Math.hypot(N[i].p[0] - c[0], N[i].p[2] - c[2])));
-    camGoal.ry = Math.max(12, ...ids.map((i) => Math.abs(N[i].p[1] - c[1])));
+    const c = sel >= 0 ? N[sel].p.slice() : [0, 1, 2].map((d) => ids.reduce((a, i) => a + N[i].p[d], 0) / ids.length);
+    // Fit width and height separately along the camera's own axes, so a tall worm fills a tall phone screen.
+    const f = fwd(), rt = toWorld(1, 0, 0), dn = toWorld(0, 1, 0), dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const off = ids.map((i) => [N[i].p[0] - c[0], N[i].p[1] - c[1], N[i].p[2] - c[2]]);
+    const ex = Math.max(sel >= 0 ? 6 : 10, ...off.map((v) => Math.abs(dot(v, rt)))), ey = Math.max(sel >= 0 ? 6 : 10, ...off.map((v) => Math.abs(dot(v, dn))));
+    const ez = Math.max(0, ...off.map((v) => Math.abs(dot(v, f))));
+    const tanW = W / 2 / F || P.fov_tan, tanH = H / 2 / F || P.fov_tan;
+    const d = Math.max(ex / tanW, ey / tanH) * (sel >= 0 ? 1.5 : 1.08) + ez * 0.6;
+    goal = { C: [c[0] - f[0] * d, c[1] - f[1] * d, c[2] - f[2] * d], dist: d };
   }
-  function size() { dpr = Math.min(2, devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; }
+  function size() { dpr = Math.min(2, devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; F = Math.min(W, H) / 2 / P.fov_tan; }
   function project(q) {
-    const p = [q[0] - cam.c[0], q[1] - cam.c[1], q[2] - cam.c[2]], depth = Math.max(cam.rx, cam.ry);
+    const v0 = q[0] - C[0], v1 = q[1] - C[1], v2 = q[2] - C[2];
     const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), cr = Math.cos(roll), sr = Math.sin(roll);
-    const x0 = p[0] * cy - p[2] * sy, z1 = p[0] * sy + p[2] * cy;
-    const y0 = p[1] * cp - z1 * sp, z = p[1] * sp + z1 * cp;
-    const x = x0 * cr - y0 * sr, y = x0 * sr + y0 * cr;
-    // Fit what is shown: spin happens around the vertical axis, so width fits the radius around it, height the vertical reach.
-    const f = 340 / (340 + z * 100 / depth) * zoom * Math.min(W * 0.44 / cam.rx, H * 0.44 / cam.ry);
-    return [W / 2 + pan[0] + x * f, H / 2 + pan[1] + y * f, z, f];
+    const x1 = v0 * cy - v2 * sy, z1 = v0 * sy + v2 * cy;
+    const y2 = v1 * cp - z1 * sp, z = v1 * sp + z1 * cp;
+    const x = x1 * cr - y2 * sr, y = x1 * sr + y2 * cr;
+    if (z < 1.5) return [0, 0, z, 0];
+    const f = F / z;
+    return [W / 2 + x * f, H / 2 + y * f, z, f];
+  }
+  // Fly toward the point under (mx, my): k > 1 moves in, k < 1 backs out.
+  function flyAt(k, mx, my) {
+    goal = null;
+    const a = (mx - W / 2) / F, b = (my - H / 2) / F, l = Math.hypot(a, b, 1), dir = toWorld(a / l, b / l, 1 / l);
+    const step = (1 - 1 / k) * dist;
+    for (let d = 0; d < 3; d++) C[d] += dir[d] * step;
+    dist = Math.max(4, dist - step);
+  }
+  function slide(dx, dy) {
+    goal = null;
+    const s = dist / F, m = toWorld(-dx * s, -dy * s, 0);
+    for (let d = 0; d < 3; d++) C[d] += m[d];
+  }
+  function turn(dx, dy) {
+    goal = null;
+    yaw -= dx * 0.005; pitch = Math.max(-1.45, Math.min(1.45, pitch - dy * 0.005));
   }
   const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return 'rgba(' + (v >> 16) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + a + ')'; };
   function glow(x, y, r, hex, a) {
@@ -173,19 +195,26 @@ const VIEW_JS = `function mountMap(D, P) {
   }
   const near = (i) => sel >= 0 && (i === sel || nbrs[sel].some(([j]) => j === i));
   function draw() {
-    if (spin && !drag && !pinch && sel < 0) yaw += P.auto_rotate;
-    for (let d = 0; d < 3; d++) cam.c[d] += (camGoal.c[d] - cam.c[d]) * 0.08;
-    cam.rx += (camGoal.rx - cam.rx) * 0.08; cam.ry += (camGoal.ry - cam.ry) * 0.08;
+    if (goal) {
+      for (let d = 0; d < 3; d++) C[d] += (goal.C[d] - C[d]) * 0.08;
+      dist += (goal.dist - dist) * 0.08;
+      if (Math.hypot(goal.C[0] - C[0], goal.C[1] - C[1], goal.C[2] - C[2]) < 0.05) goal = null;
+    } else if (spin && !drag && !touches && sel < 0) {
+      // Idle: circle slowly around the point the camera is looking at.
+      const f = fwd(), T = [C[0] + f[0] * dist, C[1] + f[1] * dist, C[2] + f[2] * dist];
+      yaw += P.auto_rotate;
+      const g = fwd(); C = [T[0] - g[0] * dist, T[1] - g[1] * dist, T[2] - g[2] * dist];
+    }
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
     proj = N.map((n) => project(n.p));
     const faded = sel >= 0 ? 0.3 : 1, crowd = Math.min(1, Math.sqrt(P.crowd_nodes / Math.max(1, shown)));
     cx.globalCompositeOperation = 'screen';
-    for (const g of regions) { const p = project(g.c); glow(p[0], p[1], g.spread * p[3] * P.region_scale, P.palette[g.k % P.palette.length], P.region_alpha * faded); }
+    for (const g of regions) { const p = project(g.c); if (p[3]) glow(p[0], p[1], Math.min(W, g.spread * p[3] * P.region_scale), P.palette[g.k % P.palette.length], P.region_alpha * faded); }
     cx.globalCompositeOperation = 'source-over';
-    if (sel >= 0) {
+    if (sel >= 0 && proj[sel][3]) {
       cx.lineWidth = 0.7;
       for (const [j, m] of nbrs[sel]) {
-        if (!vis[j]) continue;
+        if (!vis[j] || !proj[j][3]) continue;
         cx.strokeStyle = 'rgba(255,255,255,' + (0.2 + m * 0.5) + ')';
         cx.beginPath(); cx.moveTo(proj[sel][0], proj[sel][1]); cx.lineTo(proj[j][0], proj[j][1]); cx.stroke();
       }
@@ -193,13 +222,14 @@ const VIEW_JS = `function mountMap(D, P) {
     const order = proj.map((p, i) => [p[2], i]).sort((a, b) => b[0] - a[0]);
     const placed = [];
     for (const [, i] of order) {
-      if (!vis[i]) continue;
-      const n = N[i], p = proj[i], r = Math.max(1, (P.point_min + (P.point_max - P.point_min) * n.w) * Math.sqrt(p[3] * 2.4) * crowd * (n.r ? 1.3 : 1));
+      if (!vis[i] || !proj[i][3]) continue;
+      const n = N[i], p = proj[i];
+      const r = Math.min(40, Math.max(0.8, (P.point_min + (P.point_max - P.point_min) * n.w) * Math.sqrt(p[3] * 2.4) * crowd * (n.r ? 1.3 : 1)));
       const dim = sel >= 0 && !near(i);
-      cx.globalAlpha = dim ? 0.18 : 0.95;
+      cx.globalAlpha = (dim ? 0.18 : 0.95) * Math.min(1, p[2] / 12);
       if (n.r) { cx.strokeStyle = P.rec_color; cx.lineWidth = 1.2; cx.beginPath(); cx.arc(p[0], p[1], r + 1.5, 0, 7); cx.stroke(); }
       else { cx.fillStyle = colour(n); cx.beginPath(); cx.arc(p[0], p[1], r, 0, 7); cx.fill(); }
-      const label = sel >= 0 ? near(i) : labelled.has(i);
+      const label = sel >= 0 ? near(i) : labelled.has(i) || p[3] > P.label_close;
       if (label && !dim && (i === sel || !placed.some((q) => Math.abs(q[0] - p[0]) < 64 && Math.abs(q[1] - p[1]) < 12))) {
         placed.push(p); cx.fillStyle = n.r ? '#ffffff' : '#dfe3fb'; cx.font = (i === sel ? '600 13px' : n.r ? 'italic 11px' : '11px') + ' system-ui';
         cx.fillText(n.n, p[0] + r + 4, p[1] + 4);
@@ -208,7 +238,7 @@ const VIEW_JS = `function mountMap(D, P) {
     cx.globalAlpha = 1;
     if (sel < 0) for (const g of regions) {
       if (!g.name) continue;
-      const p = project(g.c);
+      const p = project(g.c); if (!p[3]) continue;
       cx.fillStyle = rgba(P.palette[g.k % P.palette.length], 0.85); cx.font = '600 10px system-ui'; cx.textAlign = 'center';
       cx.fillText(g.name.toUpperCase(), p[0], p[1] - g.spread * p[3] * 1.1); cx.textAlign = 'start';
     }
@@ -237,25 +267,25 @@ const VIEW_JS = `function mountMap(D, P) {
       t.textContent = [n.t >= 0 ? D.tags[n.t] : 'other', liked, kin.length ? 'close to ' + kin.join(', ') : ''].filter(Boolean).join('  ·  ');
     }
     info.append(t);
+    // Open the artist in Spotify. A search link works for every artist, saved or suggested, and opens the app on a phone.
+    const sp = document.createElement('a'); sp.className = 'spot'; sp.textContent = 'Open in Spotify';
+    sp.href = P.spotify_search + encodeURIComponent(n.n); sp.target = '_blank'; sp.rel = 'noopener noreferrer';
+    info.append(sp);
     const close = document.createElement('button'); close.className = 'x'; close.textContent = '×'; close.setAttribute('aria-label', 'Close');
     close.onclick = () => select(-1); info.append(close);
     info.style.display = 'block';
   }
-  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId }; });
+  cv.addEventListener('pointerdown', (e) => { touches++; cv.setPointerCapture(e.pointerId); if (touches === 1) drag = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId }; else drag = null; });
   cv.addEventListener('pointermove', (e) => {
-    if (!drag || e.pointerId !== drag.id || pinch) return;
+    if (!drag || e.pointerId !== drag.id || touches > 1) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved += Math.abs(dx) + Math.abs(dy);
-    yaw += dx * 0.008; pitch = Math.max(-1.4, Math.min(1.4, pitch + dy * 0.008)); drag.x = e.clientX; drag.y = e.clientY;
+    turn(dx, dy); drag.x = e.clientX; drag.y = e.clientY;
   });
-  cv.addEventListener('pointerup', (e) => {
-    if (drag && drag.moved < 6) { const r = cv.getBoundingClientRect(); const i = pick(e.clientX - r.left, e.clientY - r.top); select(i === sel ? -1 : i); }
-    drag = null;
-  });
-  // Zoom about a point on screen (pinch midpoint or cursor), so you can close in on any part of the map.
-  function zoomAt(k, mx, my) {
-    const nz = Math.max(0.5, Math.min(8, zoom * k)); k = nz / zoom; zoom = nz;
-    pan[0] = mx - W / 2 - (mx - W / 2 - pan[0]) * k; pan[1] = my - H / 2 - (my - H / 2 - pan[1]) * k;
-  }
+  const up = (e) => {
+    if (drag && drag.moved < 6 && e.type === 'pointerup') { const r = cv.getBoundingClientRect(); const i = pick(e.clientX - r.left, e.clientY - r.top); select(i === sel ? -1 : i); }
+    drag = null; touches = Math.max(0, touches - 1);
+  };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   cv.addEventListener('touchmove', (e) => {
     if (e.touches.length !== 2) { pinch = null; twist = null; mid = null; return; }
     e.preventDefault();
@@ -263,12 +293,12 @@ const VIEW_JS = `function mountMap(D, P) {
     const dx = e.touches[1].clientX - e.touches[0].clientX, dy = e.touches[1].clientY - e.touches[0].clientY;
     const d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
     const m = [(e.touches[0].clientX + e.touches[1].clientX) / 2 - rc.left, (e.touches[0].clientY + e.touches[1].clientY) / 2 - rc.top];
-    if (mid) { pan[0] += m[0] - mid[0]; pan[1] += m[1] - mid[1]; } mid = m;
-    if (pinch) zoomAt(d / pinch, m[0], m[1]); pinch = d;
+    if (mid) slide(m[0] - mid[0], m[1] - mid[1]); mid = m;
+    if (pinch) flyAt(Math.pow(d / pinch, P.pinch_speed), m[0], m[1]); pinch = d;
     if (twist !== null) { roll += a - twist; syncRoll(); } twist = a;
   }, { passive: false });
-  cv.addEventListener('touchend', () => { pinch = null; twist = null; mid = null; });
-  cv.addEventListener('wheel', (e) => { e.preventDefault(); const rc = cv.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.001), e.clientX - rc.left, e.clientY - rc.top); }, { passive: false });
+  cv.addEventListener('touchend', (e) => { if (e.touches.length < 2) { pinch = null; twist = null; mid = null; } });
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); const rc = cv.getBoundingClientRect(); flyAt(Math.exp(-e.deltaY * 0.0015), e.clientX - rc.left, e.clientY - rc.top); }, { passive: false });
 
   // ---------- controls ----------
   // Genres: the legend shows only the genres switched on. "+ genres" opens the rest; All and Clear are plain buttons.
@@ -281,6 +311,19 @@ const VIEW_JS = `function mountMap(D, P) {
   function drawLegend() {
     if (!on.size) tray = true;
     lg.textContent = '';
+    if (sel >= 0) {
+      // With an artist tapped, the legend lists only the genres around it; tap one to focus on that genre.
+      const around = [...new Set([sel].concat(nbrs[sel].filter(([j]) => vis[j]).map(([j]) => j)).filter((i) => !N[i].r).map((i) => N[i].t))]
+        .sort((a, b) => allKeys.indexOf(a) - allKeys.indexOf(b));
+      const head = document.createElement('span'); head.className = 'hint'; head.textContent = 'genres around ' + N[sel].n; lg.append(head);
+      const r = document.createElement('div'); r.className = 'chips'; lg.append(r);
+      around.forEach((k) => {
+        const b = document.createElement('button'); b.className = 'chip on'; b.style.setProperty('--c', colourOf(k)); b.textContent = nameOf(k);
+        b.setAttribute('aria-label', 'Focus on ' + nameOf(k)); b.onclick = () => { sel = -1; tray = false; setGenres([k]); }; r.append(b);
+      });
+      const back = document.createElement('button'); back.className = 'chip more'; back.textContent = 'all genres'; back.onclick = () => select(-1); r.append(back);
+      return;
+    }
     const row = (cls) => { const d = document.createElement('div'); d.className = cls; lg.append(d); return d; };
     const act = row('acts');
     const actBtn = (label, pressed, fn) => { const b = document.createElement('button'); b.className = 'act'; b.textContent = label; b.setAttribute('aria-pressed', pressed ? 'true' : 'false'); b.onclick = fn; act.append(b); };
@@ -330,14 +373,14 @@ const VIEW_JS = `function mountMap(D, P) {
   let syncRoll = () => {};
   if (vc) {
     const btn = (label, aria, fn) => { const b = document.createElement('button'); b.className = 'vbtn'; b.textContent = label; b.setAttribute('aria-label', aria); b.onclick = fn; vc.append(b); return b; };
-    btn('−', 'Zoom out', () => zoomAt(1 / 1.3, W / 2, H / 2));
+    btn('−', 'Back away', () => flyAt(1 / 1.4, W / 2, H / 2));
     const z = document.createElement('input'); z.type = 'range'; z.min = -180; z.max = 180; z.step = 1; z.value = 0; z.className = 'roll'; z.setAttribute('aria-label', 'Turn on the z axis');
     z.oninput = () => { roll = (+z.value) * Math.PI / 180; };
     syncRoll = () => { let deg = Math.round(roll * 180 / Math.PI); deg = ((deg + 540) % 360) - 180; z.value = deg; };
     vc.append(z);
-    btn('+', 'Zoom in', () => zoomAt(1.3, W / 2, H / 2));
+    btn('+', 'Move closer', () => flyAt(1.4, W / 2, H / 2));
     const sp = btn('❚❚', 'Pause spin', () => { spin = !spin; sp.textContent = spin ? '❚❚' : '▶'; sp.setAttribute('aria-label', spin ? 'Pause spin' : 'Resume spin'); });
-    btn('⟲', 'Reset view', () => { yaw = 0.4; pitch = -0.12; roll = 0; zoom = 1; z.value = 0; select(-1); });
+    btn('⟲', 'Reset view', () => { yaw = 0.4; pitch = -0.12; roll = 0; z.value = 0; select(-1); });
   }
   const fl = document.getElementById('filters'), withSongs = lib.filter((i) => 's' in N[i]);
   if (fl && withSongs.length) {
@@ -355,8 +398,8 @@ const VIEW_JS = `function mountMap(D, P) {
       if (y1 > y0) slider('First liked since', y0, y1, y0, (v) => v === y0 ? 'liked any time' : 'new to you since ' + v, (v) => { sinceYear = v === y0 ? null : v; if (sel >= 0) select(sel); else refresh(); });
     }
   }
-  refresh();
-  addEventListener('resize', size); size(); draw();
+  size(); refresh();
+  addEventListener('resize', () => { size(); frame(); }); draw();
 }`;
 // Pages may run inline code and talk only to the hosts listed; nothing loads from anywhere else.
 const CSP = (connect = []) => `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'none'; connect-src ${connect.length ? connect.join(' ') : "'none'"}; base-uri 'none'; form-action 'none'`;
