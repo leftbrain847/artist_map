@@ -32,6 +32,7 @@ footer{padding:22px;color:#4a5072;font-size:11px;letter-spacing:.06em;text-align
 .chips{display:flex;flex-wrap:wrap;justify-content:center;gap:7px}.chips.tray{padding-top:2px}
 .chip.add{opacity:.55;border-style:dashed}.chip.add:before{box-shadow:none}.chip.more{color:var(--dim);border-style:dashed}.chip.more:before{display:none}
 #legend .hint{font-size:11px;color:var(--dim);letter-spacing:.06em}
+#info .spot{display:inline-block;margin-top:10px;padding:6px 14px;border-radius:999px;border:1px solid rgba(29,185,84,.5);color:#1ed760;font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
 #info .x{position:absolute;top:6px;right:10px;font-size:18px;color:var(--dim);padding:2px 6px}
 #view{display:flex;align-items:center;justify-content:center;gap:10px;max-width:380px;margin:4px auto 8px;padding:0 18px}
 .vbtn{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.1);color:var(--fg);text-align:center;font-size:14px;line-height:1;flex:none}
@@ -266,6 +267,10 @@ const VIEW_JS = `function mountMap(D, P) {
       t.textContent = [n.t >= 0 ? D.tags[n.t] : 'other', liked, kin.length ? 'close to ' + kin.join(', ') : ''].filter(Boolean).join('  ·  ');
     }
     info.append(t);
+    // Open the artist in Spotify. A search link works for every artist, saved or suggested, and opens the app on a phone.
+    const sp = document.createElement('a'); sp.className = 'spot'; sp.textContent = 'Open in Spotify';
+    sp.href = P.spotify_search + encodeURIComponent(n.n); sp.target = '_blank'; sp.rel = 'noopener noreferrer';
+    info.append(sp);
     const close = document.createElement('button'); close.className = 'x'; close.textContent = '×'; close.setAttribute('aria-label', 'Close');
     close.onclick = () => select(-1); info.append(close);
     info.style.display = 'block';
