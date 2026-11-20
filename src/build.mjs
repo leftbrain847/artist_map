@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs'
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildGraph, keyOf } from './graph.mjs';
+import { extraLayouts } from './layouts.mjs';
 import { spotifyToken, spotifyLibrary, lastfmData } from './sources.mjs';
 import { assertPublicSafe, assertNoSecrets } from './privacy.mjs';
 import { renderMap, renderSetup, renderCallback, renderYou } from './page.mjs';
@@ -62,10 +63,14 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
   }
 
   const g = buildGraph({ library, similar: lf.similar, tags: lf.tags }, cfg);
+  const alt = extraLayouts(g, lf, cfg);
+  if (alt.layouts) g.layouts = alt.layouts;
   const rc = reconnectState(env.SPOTIFY_CONNECTED_AT, cfg, now);
   const data = assertPublicSafe({ ...g, built: new Intl.DateTimeFormat('en-CA', { timeZone: cfg.page.time_zone }).format(new Date(now)), ...(rc.by ? { reconnect_by: rc.by } : {}) });
   writeSite(outDir, { 'index.html': renderMap(data, cfg, Boolean(pageKey)), 'connect.html': connectPage, 'callback.html': callback, ...extra }, secrets);
   console.log(`built: ${library.length} artists in library, ${g.nodes.length} on the map, ${g.edges.length} links, ${g.because.length} to try`);
+  // Numbers only: which layout, its neighbour setting, seconds, share of each artist's 10 closest kept close, genre separation.
+  for (const r of alt.report) console.log(`layout ${r.name}: neighbors ${r.neighbors}, ${(r.ms / 1000).toFixed(1)}s, kept ${Math.round(r.kept * 100)}% of closest artists close, genre separation ${r.separation.toFixed(2)}`);
   if (rc.state === 'soon') console.log(`::warning::Spotify sign-in expires around ${rc.by}. Reconnect at https://leftbrain847.github.io/artist_map/connect.html before then.`);
   if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `connected=true\nreconnect=${rc.state}\nreconnect_by=${rc.by ?? ''}\n`);
   return { connected: true, data, reconnect: rc };

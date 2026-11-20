@@ -58,6 +58,9 @@ const MAP_BODY = `<div id="tools"><input id="find" list="names" placeholder="fin
 <section><h2>To try</h2><p id="recs_note"></p><ol id="recs"></ol></section>
 <footer id="foot"></footer>`;
 const VIEW_JS = `function mountMap(D, P) {
+  // ?layout=<name> shows one of the extra layouts the build added (positions only); anything else keeps the main one.
+  const wantLayout = new URLSearchParams(location.search).get('layout'), altPos = D.layouts && Object.prototype.hasOwnProperty.call(D.layouts, wantLayout) ? D.layouts[wantLayout] : null;
+  if (altPos && altPos.length === D.nodes.length) D.nodes.forEach((n, i) => { n.p = altPos[i]; });
   const cv = document.getElementById('c'), cx = cv.getContext('2d'), info = document.getElementById('info');
   const N = D.nodes, lib = N.map((n, i) => i).filter((i) => !N[i].r);
   const colour = (n) => n.r ? P.rec_color : n.t >= 0 ? P.palette[n.t % P.palette.length] : P.other_color;

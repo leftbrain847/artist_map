@@ -16,7 +16,10 @@ node --test
 ```
 
 ## Deployed
-- Live: https://leftbrain847.github.io/artist_map/
+- Live: https://leftbrain847.github.io/artist_map/ (the helix, `graph.layout`)
+- Other layouts of the same map: add `?layout=<name>` for any name in `graph.extra_layouts`, e.g.
+  https://leftbrain847.github.io/artist_map/?layout=umap. UMAP settings are in `graph.umap`; the build log prints
+  each layout's time, share of closest artists kept close, and genre separation (numbers only).
 - Day snapshot: `YYYY-MM-DD - Project` (frozen; never edited)
 
 ## Ship a sprint day
