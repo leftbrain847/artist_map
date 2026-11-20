@@ -14,18 +14,26 @@ const fixture = JSON.parse(readFileSync(new URL('./fixtures/sample.json', import
 const out = () => mkdtempSync(join(tmpdir(), 'am-'));
 const res = (body, status = 200) => ({ ok: status < 400, status, headers: { get: () => null }, json: async () => body });
 
-test('graph: same input, same map; recommendations need several links', () => {
+test('graph: same input, same map; suggestions come only from artists you have, never ones you already have', () => {
   const a = buildGraph(fixture, cfg), b = buildGraph(fixture, cfg);
   assert.deepEqual(a, b);
-  assert.ok(a.because.length > 0 && a.because.length <= cfg.graph.recommend_count);
+  assert.ok(a.because.length > 0 && a.because.length <= cfg.graph.candidate_pool);
   for (const r of a.because) {
     assert.ok(a.nodes[r.i].r);
-    assert.ok(r.from.length >= cfg.graph.recommend_min_links);
-    assert.ok(r.from.every((j) => !a.nodes[j].r));
+    assert.ok(r.from.length >= cfg.graph.candidate_min_links);
+    assert.ok(r.from.every(([j, m]) => !a.nodes[j].r && m >= cfg.lastfm.min_match));
   }
   const lib = new Set(fixture.library.map((x) => keyOf(x.name)));
-  assert.ok(a.nodes.filter((n) => n.r).every((n) => !lib.has(keyOf(n.n))), 'never recommends what is already saved');
+  assert.ok(a.nodes.filter((n) => n.r).every((n) => !lib.has(keyOf(n.n))), 'never suggests what is already saved');
   assert.ok(!a.tags.includes('seen live'), 'junk tags are skipped');
+  assert.ok(a.nodes.filter((n) => !n.r).every((n) => n.t >= 0), 'linked artists without a common tag borrow their neighbours\' genre');
+});
+
+test('worm layout: genres run end to end along the tube', () => {
+  const g = buildGraph(fixture, cfg);
+  const ys = g.tags.map((t, k) => { const v = g.nodes.filter((n) => !n.r && n.t === k).map((n) => n.p[1]); return v.reduce((a, x) => a + x, 0) / v.length; });
+  const spreadY = Math.max(...ys) - Math.min(...ys);
+  assert.ok(spreadY > 80, 'genre centres are spread along the worm, not piled in the middle');
 });
 
 test('privacy: only allowed fields, nothing token-shaped', () => {

@@ -32,30 +32,41 @@ export function buildGraph({ library, similar, tags }, cfg) {
     }
   });
 
-  const recs = [...cand.entries()]
-    .filter(([, c]) => c.from.size >= g.recommend_min_links)
+  // Keep a pool of candidates; the page picks which to suggest for whatever genres or artist are selected.
+  const pool = [...cand.entries()]
+    .filter(([, c]) => c.from.size >= g.candidate_min_links)
     .sort((a, b) => b[1].score - a[1].score || a[1].name.localeCompare(b[1].name))
-    .slice(0, g.recommend_count);
+    .slice(0, g.candidate_pool);
   const because = [];
-  for (const [k, c] of recs) {
+  for (const [k, c] of pool) {
     const i = nodes.length;
-    nodes.push({ name: c.name, key: k, w: 0.35, rec: true });
+    nodes.push({ name: c.name, key: k, w: 0.3, rec: true });
     index.set(k, i);
     for (const [j, m] of c.from) addEdge(i, j, m);
-    because.push({ i, from: [...c.from.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([j]) => j) });
+    because.push({ i, from: [...c.from.entries()].sort((a, b) => b[1] - a[1]).map(([j, m]) => [j, round(m)]) });
   }
 
-  // Colour by each artist's leading Last.fm tag; the most common tags get colours, the rest are "other".
+  // Colour by genre: each artist takes the first of its Last.fm tags that is among the most common ones.
   const skip = new Set(cfg.lastfm.tag_skip.map(keyOf));
-  const first = nodes.map((n) => (tags[n.key] ?? []).map(keyOf).find((t) => t && t.length <= 40 && !skip.has(t)) ?? null);
+  const own = nodes.map((n) => (tags[n.key] ?? []).map(keyOf).filter((t) => t && t.length <= 40 && !skip.has(t)));
   const counts = new Map();
-  first.forEach((t) => t && counts.set(t, (counts.get(t) ?? 0) + 1));
+  own.forEach((ts) => ts[0] && counts.set(ts[0], (counts.get(ts[0]) ?? 0) + 1));
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, g.max_tags).map(([t]) => t);
   const tagIndex = new Map(top.map((t, i) => [t, i]));
-  nodes.forEach((n, i) => { n.t = tagIndex.has(first[i]) ? tagIndex.get(first[i]) : -1; });
+  nodes.forEach((n, i) => { const t = own[i].find((x) => tagIndex.has(x)); n.t = t === undefined ? -1 : tagIndex.get(t); });
 
   const edgeList = [...edges.entries()].map(([k, m]) => { const [i, j] = k.split('|').map(Number); return [i, j, m]; });
-  const pos = layout(nodes, edgeList, g);
+  // Untagged library artists borrow the genre most of their linked artists have.
+  for (let pass = 0; pass < 2; pass++) {
+    const votes = nodes.map(() => new Map());
+    for (const [i, j, m] of edgeList) {
+      if (nodes[j].t >= 0 && !nodes[j].rec) votes[i].set(nodes[j].t, (votes[i].get(nodes[j].t) ?? 0) + m);
+      if (nodes[i].t >= 0 && !nodes[i].rec) votes[j].set(nodes[i].t, (votes[j].get(nodes[i].t) ?? 0) + m);
+    }
+    nodes.forEach((n, i) => { if (n.t < 0 && !n.rec && votes[i].size) n.t = [...votes[i].entries()].sort((a, b) => b[1] - a[1])[0][0]; });
+  }
+
+  const pos = g.layout === 'worm' ? wormLayout(nodes, edgeList, top.length, g) : layout(nodes, edgeList, g);
   return {
     nodes: nodes.map((n, i) => ({ n: n.name, w: round(n.w), t: n.t, r: n.rec, p: pos[i].map(round), ...(n.rec ? {} : { s: n.songs, ...(n.first ? { d: n.first } : {}) }) })),
     edges: edgeList.map(([i, j, m]) => [i, j, round(m)]),
@@ -105,4 +116,64 @@ export function layout(nodes, edges, g) {
   }
   const scale = Math.max(1, ...p.map((v) => Math.hypot(...v)));
   return p.map((v) => v.map((x) => (x / scale) * 100));
+}
+
+// The worm: genres laid end to end along a winding 3D tube, neighbouring genres next to each other,
+// so you can follow how one sound shades into the next. Links then pull related artists together a little.
+export function wormLayout(nodes, edges, nTags, g) {
+  const rand = rng(g.seed);
+  const lib = nodes.map((n, i) => i).filter((i) => !nodes[i].rec);
+  // Order genres so each one sits next to the genre it shares the most links with.
+  const link = Array.from({ length: nTags + 1 }, () => new Array(nTags + 1).fill(0));
+  const tg = (i) => (nodes[i].t >= 0 ? nodes[i].t : nTags);
+  for (const [i, j, m] of edges) if (!nodes[i].rec && !nodes[j].rec && tg(i) !== tg(j)) { link[tg(i)][tg(j)] += m; link[tg(j)][tg(i)] += m; }
+  const size = new Array(nTags + 1).fill(0);
+  lib.forEach((i) => size[tg(i)]++);
+  const order = [];
+  const left = new Set(size.map((c, t) => t).filter((t) => size[t] > 0));
+  let cur = [...left].sort((a, b) => size[b] - size[a])[0];
+  while (cur !== undefined) {
+    order.push(cur); left.delete(cur);
+    cur = [...left].sort((a, b) => link[cur][b] - link[cur][a] || size[b] - size[a])[0];
+  }
+  // Each genre gets a stretch of the tube in proportion to its size.
+  const total = lib.length || 1;
+  const span = new Map();
+  let at = 0;
+  for (const t of order) { span.set(t, [at, at + size[t] / total]); at += size[t] / total; }
+  const turns = g.worm_turns, len = 200, amp = g.worm_amplitude, tube = g.worm_tube;
+  const spine = (u) => [amp * Math.sin(u * Math.PI * 2 * turns), (u - 0.5) * len, amp * 0.7 * Math.cos(u * Math.PI * 2 * turns * 0.8)];
+  const u = nodes.map(() => 0.5);
+  const p = nodes.map(() => [0, 0, 0]);
+  const home = nodes.map(() => [0, 0, 0]);
+  const placed = new Map(order.map((t) => [t, 0]));
+  lib.sort((a, b) => nodes[b].w - nodes[a].w).forEach((i) => {
+    const t = tg(i), [a, b] = span.get(t), k = placed.get(t);
+    placed.set(t, k + 1);
+    u[i] = a + (b - a) * ((k + 0.5 + (rand() - 0.5) * 0.8) / size[t]);
+    const c = spine(u[i]), ang = rand() * Math.PI * 2, rad = tube * Math.sqrt(rand());
+    home[i] = [c[0] + Math.cos(ang) * rad, c[1] + (rand() - 0.5) * 3, c[2] + Math.sin(ang) * rad];
+    p[i] = home[i].slice();
+  });
+  // Suggestions sit between the artists that lead to them, a little outside the tube.
+  const src = nodes.map(() => []);
+  for (const [i, j, m] of edges) { if (nodes[i].rec && !nodes[j].rec) src[i].push([j, m]); if (nodes[j].rec && !nodes[i].rec) src[j].push([i, m]); }
+  nodes.forEach((n, i) => {
+    if (!n.rec) return;
+    const s = src[i].length ? src[i] : [[lib[0], 1]];
+    const wsum = s.reduce((a, [, m]) => a + m, 0) || 1;
+    const c = [0, 1, 2].map((d) => s.reduce((a, [j, m]) => a + home[j][d] * m, 0) / wsum);
+    const ang = rand() * Math.PI * 2;
+    home[i] = [c[0] + Math.cos(ang) * tube * 0.6, c[1], c[2] + Math.sin(ang) * tube * 0.6];
+    p[i] = home[i].slice();
+  });
+  // A light relaxation: links pull, each artist is tethered to its spot on the tube.
+  for (let it = 0; it < g.worm_iterations; it++) {
+    const f = p.map(() => [0, 0, 0]);
+    for (const [i, j, m] of edges) {
+      for (let d = 0; d < 3; d++) { const x = (p[j][d] - p[i][d]) * 0.02 * m; f[i][d] += x; f[j][d] -= x; }
+    }
+    p.forEach((v, i) => { for (let d = 0; d < 3; d++) v[d] += f[i][d] + (home[i][d] - v[d]) * 0.12; });
+  }
+  return p;
 }
