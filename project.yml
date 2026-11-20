@@ -2,6 +2,6 @@
 theme: audio          # one of the index's config.themes
 tags: [music, 3d, visualization]   # from the index's config.tags; new tags lowercase_with_underscores
 what: "J's saved Spotify artists as a 3D map, linked by Last.fm similarity, with artists to try next"
-next: "Nightly build from Spotify and Last.fm, published to GitHub Pages"
+next: "Try all three layouts side by side: genre anchors with bridges, pick-3-axes, and a UMAP squash"
 active: true          # true pulls this repo's tasks into J's queue
 public: true          # informational; each sprint day's snapshot decides publishing
