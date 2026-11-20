@@ -38,6 +38,7 @@ jobs:
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
           SPOTIFY_CONNECTED_AT: ${{ secrets.SPOTIFY_CONNECTED_AT }}
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_PAGE_KEY: ${{ secrets.LASTFM_PAGE_KEY }}
           NEW_REFRESH_FILE: ${{ runner.temp }}/new_refresh
         run: node src/build.mjs
       - name: Save Spotify's replacement sign-in token, if it sent one

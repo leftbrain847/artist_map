@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { buildGraph, keyOf } from './graph.mjs';
 import { spotifyToken, spotifyLibrary, lastfmData } from './sources.mjs';
 import { assertPublicSafe, assertNoSecrets } from './privacy.mjs';
-import { renderMap, renderSetup, renderCallback } from './page.mjs';
+import { renderMap, renderSetup, renderCallback, renderYou } from './page.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const loadConfig = () => JSON.parse(readFileSync(join(ROOT, 'config/artist_map.json'), 'utf8'));
@@ -34,8 +34,12 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
   const cfg = loadConfig();
   const secrets = [env.SPOTIFY_CLIENT_SECRET, env.SPOTIFY_REFRESH_TOKEN, env.LASTFM_API_KEY];
   secrets.forEach(mask);
-  const callback = renderCallback(cfg);
+  const callback = renderCallback(cfg, env.SPOTIFY_CLIENT_ID);
   const connectPage = renderSetup(env.SPOTIFY_CLIENT_ID, cfg);
+  // The visitor page carries its own Last.fm key, separate from the nightly one, so abuse can only break that page.
+  let pageKey = env.LASTFM_PAGE_KEY || '';
+  if (pageKey && pageKey === env.LASTFM_API_KEY) { console.log('::warning::LASTFM_PAGE_KEY must be a different key from LASTFM_API_KEY; visitor maps stay closed.'); pageKey = ''; }
+  const extra = cfg.visitor.enabled ? { 'you.html': renderYou(cfg, env.SPOTIFY_CLIENT_ID, pageKey) } : {};
 
   let library, lf;
   if (fixture) {
@@ -43,7 +47,7 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
     lf = { similar: fixture.similar, tags: fixture.tags };
   } else {
     if (!env.SPOTIFY_REFRESH_TOKEN) {
-      writeSite(outDir, { 'index.html': connectPage, 'connect.html': connectPage, 'callback.html': callback }, secrets);
+      writeSite(outDir, { 'index.html': connectPage, 'connect.html': connectPage, 'callback.html': callback, ...extra }, secrets);
       if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, 'connected=false\n');
       console.log('not connected yet: published the connect page');
       return { connected: false };
@@ -60,7 +64,7 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
   const g = buildGraph({ library, similar: lf.similar, tags: lf.tags }, cfg);
   const rc = reconnectState(env.SPOTIFY_CONNECTED_AT, cfg, now);
   const data = assertPublicSafe({ ...g, built: new Intl.DateTimeFormat('en-CA', { timeZone: cfg.page.time_zone }).format(new Date(now)), ...(rc.by ? { reconnect_by: rc.by } : {}) });
-  writeSite(outDir, { 'index.html': renderMap(data, cfg), 'connect.html': connectPage, 'callback.html': callback }, secrets);
+  writeSite(outDir, { 'index.html': renderMap(data, cfg), 'connect.html': connectPage, 'callback.html': callback, ...extra }, secrets);
   console.log(`built: ${library.length} artists in library, ${g.nodes.length} on the map, ${g.edges.length} links, ${g.because.length} to try`);
   if (rc.state === 'soon') console.log(`::warning::Spotify sign-in expires around ${rc.by}. Reconnect at https://leftbrain847.github.io/artist_map/connect.html before then.`);
   if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `connected=true\nreconnect=${rc.state}\nreconnect_by=${rc.by ?? ''}\n`);
