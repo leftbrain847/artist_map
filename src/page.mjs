@@ -133,10 +133,20 @@ const VIEW_JS = `function mountMap(D, P) {
   }
 
   // ---------- drawing ----------
-  let yaw = 0.4, pitch = -0.12, roll = 0, zoom = 1, spin = true, drag = null, pinch = null, twist = null, W = 0, H = 0, dpr = 1, proj = [];
+  let yaw = 0.4, pitch = -0.12, roll = 0, zoom = 1, spin = true, pan = [0, 0], mid = null, drag = null, pinch = null, twist = null, W = 0, H = 0, dpr = 1, proj = [];
   // The camera eases toward whatever is shown, so a single genre fills the view instead of sitting off to one side.
   const cam = { c: [0, 0, 0], rx: 50, ry: 100 }, camGoal = { c: [0, 0, 0], rx: 50, ry: 100 };
   function frame() {
+    pan = [0, 0];
+    // With an artist tapped, close in on it and its links; otherwise fit everything shown.
+    if (sel >= 0) {
+      const ids = [sel].concat(nbrs[sel].filter(([j]) => vis[j]).map(([j]) => j));
+      const c = N[sel].p;
+      camGoal.c = c.slice();
+      camGoal.rx = Math.max(10, ...ids.map((i) => Math.hypot(N[i].p[0] - c[0], N[i].p[2] - c[2])));
+      camGoal.ry = Math.max(10, ...ids.map((i) => Math.abs(N[i].p[1] - c[1])));
+      zoom = 1; return;
+    }
     const ids = lib.filter((i) => vis[i]);
     if (!ids.length) return;
     const c = [0, 1, 2].map((d) => ids.reduce((a, i) => a + N[i].p[d], 0) / ids.length);
@@ -153,7 +163,7 @@ const VIEW_JS = `function mountMap(D, P) {
     const x = x0 * cr - y0 * sr, y = x0 * sr + y0 * cr;
     // Fit what is shown: spin happens around the vertical axis, so width fits the radius around it, height the vertical reach.
     const f = 340 / (340 + z * 100 / depth) * zoom * Math.min(W * 0.44 / cam.rx, H * 0.44 / cam.ry);
-    return [W / 2 + x * f, H / 2 + y * f, z, f];
+    return [W / 2 + pan[0] + x * f, H / 2 + pan[1] + y * f, z, f];
   }
   const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return 'rgba(' + (v >> 16) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + a + ')'; };
   function glow(x, y, r, hex, a) {
@@ -241,16 +251,24 @@ const VIEW_JS = `function mountMap(D, P) {
     if (drag && drag.moved < 6) { const r = cv.getBoundingClientRect(); const i = pick(e.clientX - r.left, e.clientY - r.top); select(i === sel ? -1 : i); }
     drag = null;
   });
+  // Zoom about a point on screen (pinch midpoint or cursor), so you can close in on any part of the map.
+  function zoomAt(k, mx, my) {
+    const nz = Math.max(0.5, Math.min(8, zoom * k)); k = nz / zoom; zoom = nz;
+    pan[0] = mx - W / 2 - (mx - W / 2 - pan[0]) * k; pan[1] = my - H / 2 - (my - H / 2 - pan[1]) * k;
+  }
   cv.addEventListener('touchmove', (e) => {
-    if (e.touches.length !== 2) { pinch = null; twist = null; return; }
+    if (e.touches.length !== 2) { pinch = null; twist = null; mid = null; return; }
     e.preventDefault();
+    const rc = cv.getBoundingClientRect();
     const dx = e.touches[1].clientX - e.touches[0].clientX, dy = e.touches[1].clientY - e.touches[0].clientY;
     const d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
-    if (pinch) zoom = Math.max(0.5, Math.min(6, zoom * d / pinch)); pinch = d;
+    const m = [(e.touches[0].clientX + e.touches[1].clientX) / 2 - rc.left, (e.touches[0].clientY + e.touches[1].clientY) / 2 - rc.top];
+    if (mid) { pan[0] += m[0] - mid[0]; pan[1] += m[1] - mid[1]; } mid = m;
+    if (pinch) zoomAt(d / pinch, m[0], m[1]); pinch = d;
     if (twist !== null) { roll += a - twist; syncRoll(); } twist = a;
   }, { passive: false });
-  cv.addEventListener('touchend', () => { pinch = null; twist = null; });
-  cv.addEventListener('wheel', (e) => { e.preventDefault(); zoom = Math.max(0.5, Math.min(5, zoom * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
+  cv.addEventListener('touchend', () => { pinch = null; twist = null; mid = null; });
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); const rc = cv.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.001), e.clientX - rc.left, e.clientY - rc.top); }, { passive: false });
 
   // ---------- controls ----------
   // Genres: the legend shows only the genres switched on. "+ genres" opens the rest; All and Clear are plain buttons.
@@ -312,14 +330,14 @@ const VIEW_JS = `function mountMap(D, P) {
   let syncRoll = () => {};
   if (vc) {
     const btn = (label, aria, fn) => { const b = document.createElement('button'); b.className = 'vbtn'; b.textContent = label; b.setAttribute('aria-label', aria); b.onclick = fn; vc.append(b); return b; };
-    btn('−', 'Zoom out', () => { zoom = Math.max(0.5, zoom / 1.3); });
+    btn('−', 'Zoom out', () => zoomAt(1 / 1.3, W / 2, H / 2));
     const z = document.createElement('input'); z.type = 'range'; z.min = -180; z.max = 180; z.step = 1; z.value = 0; z.className = 'roll'; z.setAttribute('aria-label', 'Turn on the z axis');
     z.oninput = () => { roll = (+z.value) * Math.PI / 180; };
     syncRoll = () => { let deg = Math.round(roll * 180 / Math.PI); deg = ((deg + 540) % 360) - 180; z.value = deg; };
     vc.append(z);
-    btn('+', 'Zoom in', () => { zoom = Math.min(6, zoom * 1.3); });
+    btn('+', 'Zoom in', () => zoomAt(1.3, W / 2, H / 2));
     const sp = btn('❚❚', 'Pause spin', () => { spin = !spin; sp.textContent = spin ? '❚❚' : '▶'; sp.setAttribute('aria-label', spin ? 'Pause spin' : 'Resume spin'); });
-    btn('⟲', 'Reset view', () => { yaw = 0.4; pitch = -0.12; roll = 0; zoom = 1; z.value = 0; });
+    btn('⟲', 'Reset view', () => { yaw = 0.4; pitch = -0.12; roll = 0; zoom = 1; z.value = 0; select(-1); });
   }
   const fl = document.getElementById('filters'), withSongs = lib.filter((i) => 's' in N[i]);
   if (fl && withSongs.length) {
