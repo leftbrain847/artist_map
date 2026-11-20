@@ -168,12 +168,15 @@ export function wormLayout(nodes, edges, nTags, g) {
     p[i] = home[i].slice();
   });
   // A light relaxation: links pull, each artist is tethered to its spot on the tube.
+  // Pull is divided by each artist's total link strength so a well-linked artist can't fly off.
+  const deg = nodes.map(() => 0);
+  for (const [i, j, m] of edges) { deg[i] += m; deg[j] += m; }
   for (let it = 0; it < g.worm_iterations; it++) {
     const f = p.map(() => [0, 0, 0]);
     for (const [i, j, m] of edges) {
       for (let d = 0; d < 3; d++) { const x = (p[j][d] - p[i][d]) * 0.02 * m; f[i][d] += x; f[j][d] -= x; }
     }
-    p.forEach((v, i) => { for (let d = 0; d < 3; d++) v[d] += f[i][d] + (home[i][d] - v[d]) * 0.12; });
+    p.forEach((v, i) => { for (let d = 0; d < 3; d++) v[d] += f[i][d] * 4 / Math.max(4, deg[i]) + (home[i][d] - v[d]) * 0.12; });
   }
   return p;
 }

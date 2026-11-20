@@ -185,7 +185,7 @@ const VIEW_JS = `function mountMap(D, P) {
   }
   function select(i) {
     sel = i; refresh();
-    if (i < 0) { info.style.display = 'none'; return; }
+    if (i < 0 || sel !== i) { info.style.display = 'none'; return; }
     const n = N[i];
     info.textContent = '';
     const h = document.createElement('div'); h.textContent = n.n; info.append(h);
@@ -241,7 +241,8 @@ const VIEW_JS = `function mountMap(D, P) {
       const q = find.value.trim().toLowerCase(); const i = N.findIndex((n) => n.n.toLowerCase() === q);
       if (i < 0) return;
       if (!N[i].r && !on.has(N[i].t)) on.add(N[i].t);
-      minSongs = Math.min(minSongs, N[i].s || 0); select(i); find.blur();
+      minSongs = 0; sinceYear = null; fl.querySelectorAll('input').forEach((r) => { r.value = r.min; r.dispatchEvent(new Event('input')); });
+      select(i); find.blur();
     });
   }
 
@@ -254,11 +255,11 @@ const VIEW_JS = `function mountMap(D, P) {
       wrap.append(out, r); fl.append(wrap);
     };
     const maxS = Math.min(P.songs_slider_max, Math.max(...withSongs.map((i) => N[i].s)));
-    if (maxS > 1) slider('Minimum liked songs', 0, maxS, 0, (v) => v === 0 ? 'every artist' : 'at least ' + v + ' liked song' + (v > 1 ? 's' : ''), (v) => { minSongs = v; refresh(); });
+    if (maxS > 1) slider('Minimum liked songs', 0, maxS, 0, (v) => v === 0 ? 'every artist' : 'at least ' + v + ' liked song' + (v > 1 ? 's' : ''), (v) => { minSongs = v; if (sel >= 0) select(sel); else refresh(); });
     const years = withSongs.filter((i) => N[i].d).map((i) => +N[i].d.slice(0, 4));
     if (years.length) {
       const y0 = Math.min(...years), y1 = Math.max(...years);
-      if (y1 > y0) slider('First liked since', y0, y1, y0, (v) => v === y0 ? 'liked any time' : 'new to you since ' + v, (v) => { sinceYear = v === y0 ? null : v; refresh(); });
+      if (y1 > y0) slider('First liked since', y0, y1, y0, (v) => v === y0 ? 'liked any time' : 'new to you since ' + v, (v) => { sinceYear = v === y0 ? null : v; if (sel >= 0) select(sel); else refresh(); });
     }
   }
   refresh();

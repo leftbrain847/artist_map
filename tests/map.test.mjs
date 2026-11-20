@@ -162,3 +162,11 @@ test('song counts and first-liked months reach the page, and nothing finer than 
   assert.ok(!JSON.stringify(g).includes('T21:14'), 'no day or time');
   assert.throws(() => assertPublicSafe({ ...g, nodes: [{ ...a, d: '2019-11-30' }] }), /not a month/);
 });
+
+test('worm layout: a hub artist linked by 200 others stays on the map', () => {
+  const library = [{ name: 'Hub', weight: 50 }, ...Array.from({ length: 200 }, (_, k) => ({ name: 'Spoke ' + k, weight: 1 }))];
+  const similar = Object.fromEntries(library.slice(1).map((a) => [keyOf(a.name), [{ name: 'Hub', match: 1 }]]));
+  const g = buildGraph({ library, similar, tags: {} }, cfg);
+  const r = Math.max(...g.nodes.map((n) => Math.hypot(...n.p)));
+  assert.ok(Number.isFinite(r) && r < 150, 'max radius ' + r);
+});
