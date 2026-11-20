@@ -39,6 +39,8 @@
     "max_library_nodes": 1000,
     "candidate_pool": 160,
     "candidate_min_links": 1,
+    "per_artist_candidates": 3,
+    "candidate_cap": 1200,
     "max_tags": 12,
     "layout": "worm",
     "worm_turns": 1.25,
