@@ -18,7 +18,7 @@ header p{font-size:12px;letter-spacing:.04em;margin-top:6px}
 #wrap{position:relative;height:66vh;min-height:360px;touch-action:none}canvas{width:100%;height:100%;display:block}
 #info{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;width:min(92%,420px);background:rgba(14,17,28,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px 14px;font-size:14px;text-align:center;display:none}
 #info div:first-child{font-weight:500;letter-spacing:.02em}#info div+div{color:var(--dim);font-size:12.5px;margin-top:3px}
-#legend{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;padding:12px 18px 2px;font-size:11px;letter-spacing:.08em;text-transform:lowercase;color:var(--dim)}
+#legend{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 18px 2px;font-size:11px;letter-spacing:.08em;text-transform:lowercase;color:var(--dim)}
 section{max-width:460px;margin:0 auto;padding:18px 22px 8px}h2{font-weight:300;font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--dim);text-align:center;margin:8px 0 12px}
 ol{list-style:none;margin:0;padding:0}li{padding:10px 2px;border-top:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column}li:last-child{border-bottom:1px solid rgba(255,255,255,.05)}
 li button{font-size:15px;color:#e6e9ff}li small{color:var(--dim);font-size:12px;margin-top:2px}
@@ -26,7 +26,12 @@ footer{padding:22px;color:#4a5072;font-size:11px;letter-spacing:.06em;text-align
 #tools{max-width:360px;margin:14px auto 0;padding:0 22px}#find{width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:999px;color:var(--fg);padding:9px 16px;font:inherit;font-size:13px;letter-spacing:.03em;text-align:center;outline:none}#find:focus{border-color:rgba(255,255,255,.25)}
 .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.09);border-radius:999px;padding:5px 11px;font-size:11px;letter-spacing:.06em;color:var(--fg);text-transform:lowercase;transition:opacity .2s}
 .chip:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c)}.chip.all:before{display:none}.chip.all{color:var(--dim)}
-.chip[aria-pressed="false"]{opacity:.32}.chip[aria-pressed="false"]:before{box-shadow:none}
+.acts{display:flex;gap:0;border:1px solid rgba(255,255,255,.14);border-radius:999px;overflow:hidden}
+.act{padding:7px 18px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg)}.act+.act{border-left:1px solid rgba(255,255,255,.14)}
+.act[aria-pressed="true"]{background:rgba(255,255,255,.12);color:#fff}
+.chips{display:flex;flex-wrap:wrap;justify-content:center;gap:7px}.chips.tray{padding-top:2px}
+.chip.add{opacity:.55;border-style:dashed}.chip.add:before{box-shadow:none}.chip.more{color:var(--dim);border-style:dashed}.chip.more:before{display:none}
+#legend .hint{font-size:11px;color:var(--dim);letter-spacing:.06em}
 #info .x{position:absolute;top:6px;right:10px;font-size:18px;color:var(--dim);padding:2px 6px}
 #view{display:flex;align-items:center;justify-content:center;gap:10px;max-width:380px;margin:4px auto 8px;padding:0 18px}
 .vbtn{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.1);color:var(--fg);text-align:center;font-size:14px;line-height:1;flex:none}
@@ -122,7 +127,7 @@ const VIEW_JS = `function mountMap(D, P) {
       : genres.length ? 'for ' + genres.slice(0, 3).join(', ') + (genres.length > 3 ? ' +' + (genres.length - 3) : '') : 'pick a genre above';
     const n = lib.filter((i) => vis[i]).length;
     foot.textContent = n + ' of ' + lib.length + ' artists  ·  drag to turn  ·  tap a dot or a genre' + (D.built ? '  ·  ' + D.built : '');
-    chips.forEach((c, k) => c.setAttribute('aria-pressed', on.has(k) ? 'true' : 'false'));
+    drawLegend();
     if (sel >= 0 && !N[sel].r && !picks.length) recsNote.textContent = 'nothing new close to ' + N[sel].n + ' yet';
     frame();
   }
@@ -248,16 +253,47 @@ const VIEW_JS = `function mountMap(D, P) {
   cv.addEventListener('wheel', (e) => { e.preventDefault(); zoom = Math.max(0.5, Math.min(5, zoom * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
 
   // ---------- controls ----------
+  // Genres: the legend shows only the genres switched on. "+ genres" opens the rest; All and Clear are plain buttons.
   const lg = document.getElementById('legend'), chips = new Map();
-  const chip = (label, colourHex, onTap) => {
-    const b = document.createElement('button'); b.className = 'chip'; b.style.setProperty('--c', colourHex); b.textContent = label; b.onclick = onTap; lg.append(b); return b;
-  };
-  const toggle = (k) => { if (on.has(k)) on.delete(k); else on.add(k); if (sel >= 0 && !N[sel].r && !on.has(N[sel].t)) sel = -1; refresh(); if (sel < 0) info.style.display = 'none'; };
-  D.tags.forEach((t, k) => chips.set(k, chip(t, P.palette[k % P.palette.length], () => toggle(k))));
-  if (hasOther) chips.set(-1, chip('other', P.other_color, () => toggle(-1)));
-  const all = document.createElement('button'); all.className = 'chip all'; all.textContent = 'all / none';
-  all.onclick = () => { const full = on.size === chips.size; on.clear(); if (!full) chips.forEach((c, k) => on.add(k)); select(-1); };
-  lg.append(all);
+  const allKeys = D.tags.map((t, k) => k).concat(hasOther ? [-1] : []);
+  const nameOf = (k) => (k < 0 ? 'other' : D.tags[k]), colourOf = (k) => (k < 0 ? P.other_color : P.palette[k % P.palette.length]);
+  let tray = false;
+  const setGenres = (keys) => { on.clear(); keys.forEach((k) => on.add(k)); if (sel >= 0 && !N[sel].r && !on.has(N[sel].t)) sel = -1; if (sel < 0) info.style.display = 'none'; refresh(); };
+  const toggle = (k) => { const next = new Set(on); if (next.has(k)) next.delete(k); else next.add(k); setGenres([...next]); };
+  function drawLegend() {
+    if (!on.size) tray = true;
+    lg.textContent = '';
+    const row = (cls) => { const d = document.createElement('div'); d.className = cls; lg.append(d); return d; };
+    const act = row('acts');
+    const actBtn = (label, pressed, fn) => { const b = document.createElement('button'); b.className = 'act'; b.textContent = label; b.setAttribute('aria-pressed', pressed ? 'true' : 'false'); b.onclick = fn; act.append(b); };
+    const full = on.size === allKeys.length;
+    actBtn('All genres', full, () => { tray = false; setGenres(allKeys); });
+    actBtn('Clear', on.size === 0, () => { tray = true; setGenres([]); });
+    const chipsRow = row('chips');
+    const mk = (k, kind) => {
+      const b = document.createElement('button'); b.className = 'chip ' + kind; b.style.setProperty('--c', colourOf(k));
+      b.textContent = (kind === 'add' ? '+ ' : '') + nameOf(k) + (kind === 'on' && !full ? '  ×' : '');
+      b.setAttribute('aria-label', (kind === 'add' ? 'Show ' : 'Hide ') + nameOf(k));
+      b.onclick = () => { if (full && kind === 'on') { setGenres([k]); } else toggle(k); };
+      return b;
+    };
+    if (full) {
+      const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'tap a genre to focus on it';
+      allKeys.forEach((k) => chipsRow.append(mk(k, 'on')));
+      lg.append(hint);
+      return;
+    }
+    [...on].sort((a, b) => allKeys.indexOf(a) - allKeys.indexOf(b)).forEach((k) => chipsRow.append(mk(k, 'on')));
+    const off = allKeys.filter((k) => !on.has(k));
+    if (off.length) {
+      const more = document.createElement('button'); more.className = 'chip more';
+      more.textContent = tray ? 'done' : '+ genres (' + off.length + ')'; more.onclick = () => { tray = !tray; drawLegend(); };
+      if (on.size) chipsRow.append(more);
+      if (tray) { const t = row('chips tray'); off.forEach((k) => t.append(mk(k, 'add'))); }
+    }
+    if (!on.size) { const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'pick one or more genres'; lg.append(hint); }
+  }
+  allKeys.forEach((k) => chips.set(k, null));
 
   const find = document.getElementById('find'), list = document.getElementById('names');
   if (find) {
