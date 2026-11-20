@@ -48,7 +48,21 @@
     "worm_tube": 15,
     "worm_iterations": 60,
     "layout_iterations": 350,
-    "seed": 19
+    "seed": 19,
+    "extra_layouts": {
+      "umap": { "kind": "umap", "neighbors": 30 },
+      "umap_15": { "kind": "umap", "neighbors": 15 },
+      "umap_60": { "kind": "umap", "neighbors": 60 },
+      "umap_120": { "kind": "umap", "neighbors": 120 }
+    },
+    "umap": {
+      "$comment": "Shared by every umap layout. tag_weight: how much genre tags count against Last.fm similarity (0 to 1).",
+      "min_dist": 0.5,
+      "epochs": 300,
+      "negative_samples": 5,
+      "tag_weight": 0.35,
+      "tag_rank_weights": [1, 0.8, 0.6, 0.45, 0.3]
+    }
   },
   "page": {
     "title": "Artist Map",
