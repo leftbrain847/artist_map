@@ -28,6 +28,11 @@ footer{padding:22px;color:#4a5072;font-size:11px;letter-spacing:.06em;text-align
 .chip:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c)}.chip.all:before{display:none}.chip.all{color:var(--dim)}
 .chip[aria-pressed="false"]{opacity:.32}.chip[aria-pressed="false"]:before{box-shadow:none}
 #info .x{position:absolute;top:6px;right:10px;font-size:18px;color:var(--dim);padding:2px 6px}
+#view{display:flex;align-items:center;justify-content:center;gap:10px;max-width:380px;margin:4px auto 8px;padding:0 18px}
+.vbtn{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.1);color:var(--fg);text-align:center;font-size:14px;line-height:1;flex:none}
+#view .roll{flex:1;-webkit-appearance:none;appearance:none;height:2px;background:rgba(255,255,255,.12);border-radius:2px;outline:none}
+#view .roll::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#c0caf5;border:0}
+#view .roll::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#c0caf5;border:0}
 #recs_note{text-align:center;color:var(--dim);font-size:12px;margin:-6px 0 12px;letter-spacing:.03em}
 section:has(ol:empty) ol{display:none}
 #filters{max-width:360px;margin:6px auto 0;padding:0 22px;display:flex;flex-direction:column;gap:12px}#filters:empty{display:none}
@@ -41,6 +46,7 @@ section:has(ol:empty) ol{display:none}
 const MAP_BODY = `<div id="tools"><input id="find" list="names" placeholder="find an artist" autocomplete="off" enterkeyhint="search"><datalist id="names"></datalist></div>
 <div id="legend" aria-label="Genres: tap to show or hide"></div>
 <div id="wrap"><canvas id="c"></canvas><div id="info"></div></div>
+<div id="view" aria-label="View controls"></div>
 <div id="filters"></div>
 <section><h2>To try</h2><p id="recs_note"></p><ol id="recs"></ol></section>
 <footer id="foot"></footer>`;
@@ -117,16 +123,31 @@ const VIEW_JS = `function mountMap(D, P) {
     const n = lib.filter((i) => vis[i]).length;
     foot.textContent = n + ' of ' + lib.length + ' artists  ·  drag to turn  ·  tap a dot or a genre' + (D.built ? '  ·  ' + D.built : '');
     chips.forEach((c, k) => c.setAttribute('aria-pressed', on.has(k) ? 'true' : 'false'));
+    if (sel >= 0 && !N[sel].r && !picks.length) recsNote.textContent = 'nothing new close to ' + N[sel].n + ' yet';
+    frame();
   }
 
   // ---------- drawing ----------
-  let yaw = 0.4, pitch = -0.12, zoom = 1, drag = null, pinch = null, W = 0, H = 0, dpr = 1, proj = [];
+  let yaw = 0.4, pitch = -0.12, roll = 0, zoom = 1, spin = true, drag = null, pinch = null, twist = null, W = 0, H = 0, dpr = 1, proj = [];
+  // The camera eases toward whatever is shown, so a single genre fills the view instead of sitting off to one side.
+  const cam = { c: [0, 0, 0], rx: 50, ry: 100 }, camGoal = { c: [0, 0, 0], rx: 50, ry: 100 };
+  function frame() {
+    const ids = lib.filter((i) => vis[i]);
+    if (!ids.length) return;
+    const c = [0, 1, 2].map((d) => ids.reduce((a, i) => a + N[i].p[d], 0) / ids.length);
+    camGoal.c = c;
+    camGoal.rx = Math.max(12, ...ids.map((i) => Math.hypot(N[i].p[0] - c[0], N[i].p[2] - c[2])));
+    camGoal.ry = Math.max(12, ...ids.map((i) => Math.abs(N[i].p[1] - c[1])));
+  }
   function size() { dpr = Math.min(2, devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; }
-  function project(p) {
-    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-    const x = p[0] * cy - p[2] * sy, z1 = p[0] * sy + p[2] * cy;
-    const y = p[1] * cp - z1 * sp, z = p[1] * sp + z1 * cp;
-    const f = 340 / (340 + z) * zoom * Math.min(W, H * 0.62) / 120;
+  function project(q) {
+    const p = [q[0] - cam.c[0], q[1] - cam.c[1], q[2] - cam.c[2]], depth = Math.max(cam.rx, cam.ry);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), cr = Math.cos(roll), sr = Math.sin(roll);
+    const x0 = p[0] * cy - p[2] * sy, z1 = p[0] * sy + p[2] * cy;
+    const y0 = p[1] * cp - z1 * sp, z = p[1] * sp + z1 * cp;
+    const x = x0 * cr - y0 * sr, y = x0 * sr + y0 * cr;
+    // Fit what is shown: spin happens around the vertical axis, so width fits the radius around it, height the vertical reach.
+    const f = 340 / (340 + z * 100 / depth) * zoom * Math.min(W * 0.44 / cam.rx, H * 0.44 / cam.ry);
     return [W / 2 + x * f, H / 2 + y * f, z, f];
   }
   const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return 'rgba(' + (v >> 16) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + a + ')'; };
@@ -137,7 +158,9 @@ const VIEW_JS = `function mountMap(D, P) {
   }
   const near = (i) => sel >= 0 && (i === sel || nbrs[sel].some(([j]) => j === i));
   function draw() {
-    if (!drag && !pinch && sel < 0) yaw += P.auto_rotate;
+    if (spin && !drag && !pinch && sel < 0) yaw += P.auto_rotate;
+    for (let d = 0; d < 3; d++) cam.c[d] += (camGoal.c[d] - cam.c[d]) * 0.08;
+    cam.rx += (camGoal.rx - cam.rx) * 0.08; cam.ry += (camGoal.ry - cam.ry) * 0.08;
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
     proj = N.map((n) => project(n.p));
     const faded = sel >= 0 ? 0.3 : 1, crowd = Math.min(1, Math.sqrt(P.crowd_nodes / Math.max(1, shown)));
@@ -156,7 +179,7 @@ const VIEW_JS = `function mountMap(D, P) {
     const placed = [];
     for (const [, i] of order) {
       if (!vis[i]) continue;
-      const n = N[i], p = proj[i], r = Math.max(1, (P.point_min + (P.point_max - P.point_min) * n.w) * p[3] * crowd * (n.r ? 1.3 : 1));
+      const n = N[i], p = proj[i], r = Math.max(1, (P.point_min + (P.point_max - P.point_min) * n.w) * Math.sqrt(p[3] * 2.4) * crowd * (n.r ? 1.3 : 1));
       const dim = sel >= 0 && !near(i);
       cx.globalAlpha = dim ? 0.18 : 0.95;
       if (n.r) { cx.strokeStyle = P.rec_color; cx.lineWidth = 1.2; cx.beginPath(); cx.arc(p[0], p[1], r + 1.5, 0, 7); cx.stroke(); }
@@ -214,12 +237,14 @@ const VIEW_JS = `function mountMap(D, P) {
     drag = null;
   });
   cv.addEventListener('touchmove', (e) => {
-    if (e.touches.length !== 2) { pinch = null; return; }
+    if (e.touches.length !== 2) { pinch = null; twist = null; return; }
     e.preventDefault();
-    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-    if (pinch) zoom = Math.max(0.5, Math.min(5, zoom * d / pinch)); pinch = d;
+    const dx = e.touches[1].clientX - e.touches[0].clientX, dy = e.touches[1].clientY - e.touches[0].clientY;
+    const d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    if (pinch) zoom = Math.max(0.5, Math.min(6, zoom * d / pinch)); pinch = d;
+    if (twist !== null) { roll += a - twist; syncRoll(); } twist = a;
   }, { passive: false });
-  cv.addEventListener('touchend', () => { pinch = null; });
+  cv.addEventListener('touchend', () => { pinch = null; twist = null; });
   cv.addEventListener('wheel', (e) => { e.preventDefault(); zoom = Math.max(0.5, Math.min(5, zoom * Math.exp(-e.deltaY * 0.001))); }, { passive: false });
 
   // ---------- controls ----------
@@ -246,6 +271,20 @@ const VIEW_JS = `function mountMap(D, P) {
     });
   }
 
+  // View controls: zoom, turn on the z axis, pause the spin, reset.
+  const vc = document.getElementById('view');
+  let syncRoll = () => {};
+  if (vc) {
+    const btn = (label, aria, fn) => { const b = document.createElement('button'); b.className = 'vbtn'; b.textContent = label; b.setAttribute('aria-label', aria); b.onclick = fn; vc.append(b); return b; };
+    btn('−', 'Zoom out', () => { zoom = Math.max(0.5, zoom / 1.3); });
+    const z = document.createElement('input'); z.type = 'range'; z.min = -180; z.max = 180; z.step = 1; z.value = 0; z.className = 'roll'; z.setAttribute('aria-label', 'Turn on the z axis');
+    z.oninput = () => { roll = (+z.value) * Math.PI / 180; };
+    syncRoll = () => { let deg = Math.round(roll * 180 / Math.PI); deg = ((deg + 540) % 360) - 180; z.value = deg; };
+    vc.append(z);
+    btn('+', 'Zoom in', () => { zoom = Math.min(6, zoom * 1.3); });
+    const sp = btn('❚❚', 'Pause spin', () => { spin = !spin; sp.textContent = spin ? '❚❚' : '▶'; sp.setAttribute('aria-label', spin ? 'Pause spin' : 'Resume spin'); });
+    btn('⟲', 'Reset view', () => { yaw = 0.4; pitch = -0.12; roll = 0; zoom = 1; z.value = 0; });
+  }
   const fl = document.getElementById('filters'), withSongs = lib.filter((i) => 's' in N[i]);
   if (fl && withSongs.length) {
     const slider = (label, min, max, value, fmt, onInput) => {
