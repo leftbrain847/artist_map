@@ -4,6 +4,8 @@ import { keyOf, rng } from './graph.mjs';
 import { umap, cosineKnn, neighboursKept, separation } from './umap.mjs';
 
 export const LAYOUT_NAME = /^[a-z0-9_]{1,24}$/;
+const RESERVED = new Set(['__proto__', 'constructor', 'prototype', 'null', 'undefined']);
+export const goodName = (name) => LAYOUT_NAME.test(name) && !RESERVED.has(name);
 
 // Each artist as a sparse vector: itself, the artists Last.fm calls similar (weighted by match), and its tags by rank.
 // Library artists use their own similar list; artists to try use their links into the library.
@@ -47,12 +49,14 @@ export function fitToMap(Y) {
   });
 }
 
-export function umapPositions(vectors, neighbors, cfg) {
+// knn: neighbours found once for the largest setting; each layout takes its own first k (they are sorted nearest first).
+export function umapPositions(vectors, neighbors, cfg, knn = null) {
   const g = cfg.graph, u = g.umap;
   if (vectors.length < 4) return vectors.map(() => [0, 0, 0]);
   const k = Math.max(2, Math.min(neighbors, vectors.length - 1));
-  const kn = cosineKnn(vectors, k, rng(g.seed));
-  return fitToMap(umap(kn.idx, kn.dist, { minDist: u.min_dist, epochs: u.epochs, negativeSamples: u.negative_samples, random: rng(g.seed + 1) }));
+  const kn = knn ?? cosineKnn(vectors, k, rng(g.seed));
+  const idx = kn.idx.map((r) => r.slice(0, k)), dist = kn.dist.map((r) => r.slice(0, k));
+  return fitToMap(umap(idx, dist, { minDist: u.min_dist, epochs: u.epochs, negativeSamples: u.negative_samples, random: rng(g.seed + 1) }));
 }
 
 // Every configured extra layout, plus numbers for the build log: how long each took, how many of each library
@@ -64,12 +68,17 @@ export function extraLayouts(g, lf, cfg, now = () => Date.now()) {
   const lib = g.nodes.map((nd, i) => i).filter((i) => !g.nodes[i].r);
   const close = cosineKnn(lib.map((i) => vectors[i]), 10, rng(cfg.graph.seed)).idx; // among library artists only
   const labels = g.nodes.map((nd) => (nd.r ? -1 : nd.t));
-  const layouts = {}, report = [];
   for (const [name, spec] of wanted) {
-    if (!LAYOUT_NAME.test(name)) throw new Error(`layout name "${name}" must be lowercase letters, digits or _`);
-    if (spec.kind !== 'umap') throw new Error(`layout "${name}": unknown kind "${spec.kind}"`);
+    if (!goodName(name)) throw new Error(`layout name "${name}" must be lowercase letters, digits or _, and not a reserved word`);
+    if (spec?.kind !== 'umap') throw new Error(`layout "${name}": unknown kind "${spec?.kind}"`);
+    if (!Number.isInteger(spec.neighbors) || spec.neighbors < 2) throw new Error(`layout "${name}": neighbors must be a whole number of at least 2`);
+  }
+  const most = Math.min(Math.max(...wanted.map(([, spec]) => spec.neighbors)), vectors.length - 1);
+  const knn = vectors.length >= 4 ? cosineKnn(vectors, most, rng(cfg.graph.seed)) : null;
+  const layouts = Object.create(null), report = [];
+  for (const [name, spec] of wanted) {
     const t = now();
-    layouts[name] = umapPositions(vectors, spec.neighbors, cfg);
+    layouts[name] = umapPositions(vectors, spec.neighbors, cfg, knn);
     report.push({ name, neighbors: spec.neighbors, ms: now() - t, kept: neighboursKept(close, lib.map((i) => layouts[name][i])), separation: separation(layouts[name], labels) });
   }
   return { layouts, report };

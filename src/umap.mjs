@@ -57,8 +57,9 @@ export function fuzzyGraph(knnIdx, knnDist) {
   const out = [];
   for (const [key, a] of w) {
     const [i, j] = key.split('|').map(Number);
-    const b = w.get(`${j}|${i}`) ?? 0;
-    if (b && j < i) continue; // the pair is counted once, from its smaller end
+    const back = `${j}|${i}`;
+    if (w.has(back) && j < i) continue; // the pair is counted once, from its smaller end (a weight can underflow to 0)
+    const b = w.get(back) ?? 0;
     out.push([i, j, a + b - a * b]);
   }
   return out;

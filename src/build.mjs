@@ -31,8 +31,8 @@ export function writeSite(outDir, pages, secrets) {
   writeFileSync(join(outDir, '.nojekyll'), '');
 }
 
-export async function build({ env = process.env, fetchFn = fetch, fixture = null, outDir = join(ROOT, 'dist'), now = Date.now(), pause } = {}) {
-  const cfg = loadConfig();
+export async function build({ env = process.env, fetchFn = fetch, fixture = null, outDir = join(ROOT, 'dist'), now = Date.now(), pause, config = null } = {}) {
+  const cfg = config ?? loadConfig();
   const secrets = [env.SPOTIFY_CLIENT_SECRET, env.SPOTIFY_REFRESH_TOKEN, env.LASTFM_API_KEY];
   secrets.forEach(mask);
   const callback = renderCallback(cfg, env.SPOTIFY_CLIENT_ID);
@@ -63,8 +63,10 @@ export async function build({ env = process.env, fetchFn = fetch, fixture = null
   }
 
   const g = buildGraph({ library, similar: lf.similar, tags: lf.tags }, cfg);
-  const alt = extraLayouts(g, lf, cfg);
-  if (alt.layouts) g.layouts = alt.layouts;
+  // Extra layouts are optional: if they fail, the main map still ships. The warning names the error type only, never data.
+  let alt = { layouts: null, report: [] };
+  try { alt = extraLayouts(g, lf, cfg); } catch (e) { console.log(`::warning::extra layouts skipped (${e instanceof Error ? e.name : 'error'}); the main map is unchanged`); }
+  if (alt.layouts) g.layouts = { ...alt.layouts };
   const rc = reconnectState(env.SPOTIFY_CONNECTED_AT, cfg, now);
   const data = assertPublicSafe({ ...g, built: new Intl.DateTimeFormat('en-CA', { timeZone: cfg.page.time_zone }).format(new Date(now)), ...(rc.by ? { reconnect_by: rc.by } : {}) });
   writeSite(outDir, { 'index.html': renderMap(data, cfg, Boolean(pageKey)), 'connect.html': connectPage, 'callback.html': callback, ...extra }, secrets);

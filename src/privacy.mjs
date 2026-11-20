@@ -27,8 +27,9 @@ export function assertPublicSafe(data) {
   if ('layouts' in data) {
     if (!data.layouts || typeof data.layouts !== 'object' || Array.isArray(data.layouts)) bad('layouts is not an object');
     for (const [name, pos] of Object.entries(data.layouts)) {
-      if (!/^[a-z0-9_]{1,24}$/.test(name)) bad('layout name is not a short lowercase word');
-      if (!Array.isArray(pos) || pos.length !== data.nodes.length || !pos.every((p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite))) bad(`layout ${name} is not one [x, y, z] per artist`);
+      if (!/^[a-z0-9_]{1,24}$/.test(name) || ['__proto__', 'constructor', 'prototype', 'null', 'undefined'].includes(name)) bad('layout name is not a short lowercase word');
+      const xyz = (p) => Array.isArray(p) && p.length === 3 && [0, 1, 2].every((k) => Number.isFinite(p[k])); // index loop: every() skips holes
+      if (!Array.isArray(pos) || pos.length !== data.nodes.length || !Array.from(pos, xyz).every(Boolean)) bad(`layout ${name} is not one [x, y, z] per artist`);
     }
   }
   // Names come from Spotify and tags from Last.fm; everything else is ours, so a token-shaped run there means a leak.
