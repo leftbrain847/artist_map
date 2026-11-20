@@ -3,195 +3,287 @@
  "library": [
   {
    "name": "Nixbra Glass",
-   "weight": 23
+   "weight": 23,
+   "songs": 2,
+   "first": "2018-07"
   },
   {
    "name": "Lotri North",
-   "weight": 18
+   "weight": 18,
+   "songs": 14,
+   "first": "2016-02"
   },
   {
    "name": "Temdei Echo",
-   "weight": 8
+   "weight": 8,
+   "songs": 6,
+   "first": "2017-06"
   },
   {
    "name": "Temnix Tide",
-   "weight": 5
+   "weight": 5,
+   "songs": 9,
+   "first": "2016-09"
   },
   {
    "name": "Moron Tide",
-   "weight": 15
+   "weight": 15,
+   "songs": 1,
+   "first": "2016-02"
   },
   {
    "name": "Triola Kites",
-   "weight": 6
+   "weight": 6,
+   "songs": 3,
+   "first": "2022-02"
   },
   {
    "name": "Deiar North",
-   "weight": 23
+   "weight": 23,
+   "songs": 1,
+   "first": "2017-09"
   },
   {
    "name": "Venzel Tide",
-   "weight": 20
+   "weight": 20,
+   "songs": 3,
+   "first": "2016-10"
   },
   {
    "name": "Triron Echo",
-   "weight": 16
+   "weight": 16,
+   "songs": 1,
+   "first": "2019-11"
   },
   {
    "name": "Phaven Club",
-   "weight": 3
+   "weight": 3,
+   "songs": 14,
+   "first": "2025-01"
   },
   {
    "name": "Nixdei Echo",
-   "weight": 9
+   "weight": 9,
+   "songs": 9,
+   "first": "2025-07"
   },
   {
    "name": "Gugu Avenue",
-   "weight": 25
+   "weight": 25,
+   "songs": 0
   },
   {
    "name": "Gudei Room",
-   "weight": 13
+   "weight": 13,
+   "songs": 1,
+   "first": "2016-09"
   },
   {
    "name": "Momo Room",
-   "weight": 15
+   "weight": 15,
+   "songs": 1,
+   "first": "2020-07"
   },
   {
    "name": "Temtem Glass",
-   "weight": 19
+   "weight": 19,
+   "songs": 1,
+   "first": "2024-02"
   },
   {
    "name": "Temgu Tide",
-   "weight": 3
+   "weight": 3,
+   "songs": 9,
+   "first": "2020-09"
   },
   {
    "name": "Zeldei Kites",
-   "weight": 19
+   "weight": 19,
+   "songs": 14,
+   "first": "2018-02"
   },
   {
    "name": "Guven Kites",
-   "weight": 22
+   "weight": 22,
+   "songs": 9,
+   "first": "2025-11"
   },
   {
    "name": "Venven Echo",
-   "weight": 1
+   "weight": 1,
+   "songs": 1,
+   "first": "2021-02"
   },
   {
    "name": "Kaola Glass",
-   "weight": 24
+   "weight": 24,
+   "songs": 6,
+   "first": "2017-10"
   },
   {
    "name": "Tritem Tide",
-   "weight": 8
+   "weight": 8,
+   "songs": 0
   },
   {
    "name": "Temtem Club",
-   "weight": 27
+   "weight": 27,
+   "songs": 9,
+   "first": "2019-08"
   },
   {
    "name": "Ronzel Glass",
-   "weight": 28
+   "weight": 28,
+   "songs": 14,
+   "first": "2024-07"
   },
   {
    "name": "Temtri North",
-   "weight": 3
+   "weight": 3,
+   "songs": 2,
+   "first": "2023-10"
   },
   {
    "name": "Mosul Glass",
-   "weight": 9
+   "weight": 9,
+   "songs": 4,
+   "first": "2021-05"
   },
   {
    "name": "Tritri Glass",
-   "weight": 8
+   "weight": 8,
+   "songs": 1,
+   "first": "2018-12"
   },
   {
    "name": "Temola Club",
-   "weight": 16
+   "weight": 16,
+   "songs": 1,
+   "first": "2017-10"
   },
   {
    "name": "Molo Room",
-   "weight": 6
+   "weight": 6,
+   "songs": 2,
+   "first": "2024-08"
   },
   {
    "name": "Temnix Avenue",
-   "weight": 24
+   "weight": 24,
+   "songs": 2,
+   "first": "2023-05"
   },
   {
    "name": "Deidei Kites",
-   "weight": 17
+   "weight": 17,
+   "songs": 9,
+   "first": "2017-02"
   },
   {
    "name": "Zeldei Room",
-   "weight": 13
+   "weight": 13,
+   "songs": 6,
+   "first": "2022-03"
   },
   {
    "name": "Temsul Tide",
-   "weight": 9
+   "weight": 9,
+   "songs": 2,
+   "first": "2018-08"
   },
   {
    "name": "Braven Avenue",
-   "weight": 15
+   "weight": 15,
+   "songs": 3,
+   "first": "2016-11"
   },
   {
    "name": "Phanix Club",
-   "weight": 14
+   "weight": 14,
+   "songs": 1,
+   "first": "2024-10"
   },
   {
    "name": "Temmo Tide",
-   "weight": 26
+   "weight": 26,
+   "songs": 2,
+   "first": "2021-12"
   },
   {
    "name": "Sulpha Club",
-   "weight": 1
+   "weight": 1,
+   "songs": 2,
+   "first": "2025-08"
   },
   {
    "name": "Bralo Glass",
-   "weight": 5
+   "weight": 5,
+   "songs": 9,
+   "first": "2023-02"
   },
   {
    "name": "Olabra Room",
-   "weight": 4
+   "weight": 4,
+   "songs": 1,
+   "first": "2020-08"
   },
   {
    "name": "Phadei Tide",
-   "weight": 6
+   "weight": 6,
+   "songs": 14,
+   "first": "2017-01"
   },
   {
    "name": "Ronron Tide",
-   "weight": 14
+   "weight": 14,
+   "songs": 2,
+   "first": "2026-10"
   },
   {
    "name": "Bratem Club",
-   "weight": 26
+   "weight": 26,
+   "songs": 14,
+   "first": "2023-05"
   },
   {
    "name": "Phabra Tide",
-   "weight": 1
+   "weight": 1,
+   "songs": 3,
+   "first": "2026-06"
   },
   {
    "name": "Vengu Echo",
-   "weight": 9
+   "weight": 9,
+   "songs": 0
   },
   {
    "name": "Temdei Kites",
-   "weight": 20
+   "weight": 20,
+   "songs": 4,
+   "first": "2021-03"
   },
   {
    "name": "Nixron Room",
-   "weight": 26
+   "weight": 26,
+   "songs": 9,
+   "first": "2017-08"
   },
   {
    "name": "Temdei Club",
-   "weight": 16
+   "weight": 16,
+   "songs": 0
   },
   {
    "name": "Bratem North",
-   "weight": 30
+   "weight": 30,
+   "songs": 1,
+   "first": "2020-03"
   },
   {
    "name": "Pharon Echo",
-   "weight": 20
+   "weight": 20,
+   "songs": 1,
+   "first": "2022-07"
   }
  ],
  "similar": {
