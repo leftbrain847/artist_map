@@ -42,12 +42,12 @@ test('privacy: only allowed fields, nothing token-shaped', () => {
 test('build: fixture run writes self-contained pages with no outside loads', async () => {
   const dir = out();
   const r = await build({ fixture, outDir: dir, env: { SPOTIFY_CONNECTED_AT: '2026-11-19' }, now: Date.parse('2026-11-20T03:00:00Z') });
-  assert.deepEqual(readdirSync(dir).sort(), ['.nojekyll', 'callback.html', 'connect.html', 'index.html']);
+  assert.deepEqual(readdirSync(dir).sort(), ['.nojekyll', 'callback.html', 'connect.html', 'index.html', 'you.html']);
   assert.equal(r.data.built, '2026-11-19', 'dated in Eastern time');
   for (const f of ['index.html', 'connect.html', 'callback.html']) {
     const html = readFileSync(join(dir, f), 'utf8');
     assert.ok(!/<(script|link|img)[^>]+(src|href)=["']?https?:/i.test(html), `${f} loads nothing from outside`);
-    assert.ok(!/fetch\(|XMLHttpRequest/.test(html), `${f} makes no network calls`);
+    if (f !== 'callback.html') assert.ok(!/fetch\(|XMLHttpRequest/.test(html), `${f} makes no network calls`);
   }
 });
 
@@ -111,4 +111,26 @@ test('connect: rejects junk codes before calling Spotify', async () => {
   let called = false;
   await assert.rejects(connect({ CODE: 'not a code!', OUT_FILE: '/tmp/x' }, async () => { called = true; }), /does not look like/);
   assert.equal(called, false);
+});
+
+test('visitor page: talks only to Spotify and Last.fm, carries only the page key, never a secret', async () => {
+  const dir = out();
+  const env = { SPOTIFY_CLIENT_ID: 'publicclientid123', SPOTIFY_CLIENT_SECRET: 'supersecretvalue', LASTFM_API_KEY: 'nightlykeyvalue', LASTFM_PAGE_KEY: 'pagekeyvalue' };
+  await build({ fixture, outDir: dir, env });
+  const html = readFileSync(join(dir, 'you.html'), 'utf8');
+  assert.ok(html.includes('pagekeyvalue') && html.includes('publicclientid123'));
+  assert.ok(!html.includes('supersecretvalue') && !html.includes('nightlykeyvalue'));
+  const csp = html.match(/Content-Security-Policy" content="([^"]+)"/)[1];
+  assert.match(csp, /connect-src https:\/\/api\.spotify\.com https:\/\/ws\.audioscrobbler\.com;/);
+  assert.match(html, /code_challenge_method: 'S256'/, 'PKCE, not a secret');
+  for (const f of ['index.html', 'connect.html']) assert.match(readFileSync(join(dir, f), 'utf8'), /connect-src 'none'/);
+  const cb = readFileSync(join(dir, 'callback.html'), 'utf8');
+  assert.match(cb, /connect-src https:\/\/accounts\.spotify\.com;/);
+  assert.ok(!cb.includes('supersecretvalue'));
+});
+
+test('visitor page: stays closed when the page key is missing or reuses the nightly key', async () => {
+  const dir = out();
+  await build({ fixture, outDir: dir, env: { SPOTIFY_CLIENT_ID: 'id', LASTFM_API_KEY: 'samekey123', LASTFM_PAGE_KEY: 'samekey123' } });
+  assert.ok(!readFileSync(join(dir, 'you.html'), 'utf8').includes('samekey123'));
 });

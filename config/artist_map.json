@@ -21,6 +21,15 @@
     "pause_ms": 220,
     "max_retries": 3
   },
+  "visitor": {
+    "enabled": true,
+    "url": "https://leftbrain847.github.io/artist_map/you.html",
+    "max_retries": 3,
+    "subtitle": "Your saved Spotify artists, linked by Last.fm similarity. Built in this tab; nothing is kept.",
+    "track_limit": 500,
+    "artist_limit": 80,
+    "concurrency": 4
+  },
   "weights": {
     "saved_track": 1,
     "followed": 6,
