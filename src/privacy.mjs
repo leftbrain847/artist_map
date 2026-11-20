@@ -18,6 +18,7 @@ export function assertPublicSafe(data) {
     if ('d' in nd && !(typeof nd.d === 'string' && /^\d{4}-\d{2}$/.test(nd.d))) bad('first-liked is not a month');
   }
   for (const b of data.because) for (const k of Object.keys(b)) if (!ALLOWED.because.includes(k)) bad(`unexpected field "${k}"`);
+  for (const b of data.because) if (!Number.isInteger(b.i) || !Array.isArray(b.from) || !b.from.every((x) => Array.isArray(x) && x.length === 2 && Number.isInteger(x[0]) && typeof x[1] === 'number')) bad('suggestion links are not [artist, match] pairs');
   for (const e of data.edges) if (e.length !== 3 || !e.every((x) => typeof x === 'number')) bad('edge is not [i, j, match]');
   if (data.built && !/^\d{4}-\d{2}-\d{2}$/.test(data.built)) bad('built is not a date');
   if (data.reconnect_by && !/^\d{4}-\d{2}-\d{2}$/.test(data.reconnect_by)) bad('reconnect_by is not a date');
