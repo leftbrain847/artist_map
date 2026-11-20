@@ -33,10 +33,15 @@ export function buildGraph({ library, similar, tags }, cfg) {
   });
 
   // Keep a pool of candidates; the page picks which to suggest for whatever genres or artist are selected.
-  const pool = [...cand.entries()]
+  const ranked = [...cand.entries()]
     .filter(([, c]) => c.from.size >= g.candidate_min_links)
-    .sort((a, b) => b[1].score - a[1].score || a[1].name.localeCompare(b[1].name))
-    .slice(0, g.candidate_pool);
+    .sort((a, b) => b[1].score - a[1].score || a[1].name.localeCompare(b[1].name));
+  // The best overall, plus each artist's own closest few, so tapping any artist has something new near it.
+  const keep = new Set(ranked.slice(0, g.candidate_pool).map(([k]) => k));
+  const best = new Map();
+  for (const [k, c] of ranked) for (const [i, m] of c.from) { const l = best.get(i) ?? []; l.push([m, k]); best.set(i, l); }
+  for (const l of best.values()) l.sort((a, b) => b[0] - a[0] || a[1].localeCompare(b[1])).slice(0, g.per_artist_candidates).forEach(([, k]) => keep.add(k));
+  const pool = ranked.filter(([k]) => keep.has(k)).slice(0, g.candidate_cap);
   const because = [];
   for (const [k, c] of pool) {
     const i = nodes.length;

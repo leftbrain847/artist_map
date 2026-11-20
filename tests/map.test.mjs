@@ -17,7 +17,10 @@ const res = (body, status = 200) => ({ ok: status < 400, status, headers: { get:
 test('graph: same input, same map; suggestions come only from artists you have, never ones you already have', () => {
   const a = buildGraph(fixture, cfg), b = buildGraph(fixture, cfg);
   assert.deepEqual(a, b);
-  assert.ok(a.because.length > 0 && a.because.length <= cfg.graph.candidate_pool);
+  assert.ok(a.because.length > 0);
+  const linked = new Set(a.because.flatMap((r) => r.from.map(([j]) => j)));
+  const libWithSimilar = a.nodes.map((n, i) => i).filter((i) => !a.nodes[i].r && (fixture.similar[keyOf(a.nodes[i].n)] ?? []).some((x) => !fixture.library.some((l) => keyOf(l.name) === keyOf(x.name)) && x.match >= cfg.lastfm.min_match));
+  assert.ok(libWithSimilar.every((i) => linked.has(i)), 'every artist with a new similar artist keeps at least one in the pool');
   for (const r of a.because) {
     assert.ok(a.nodes[r.i].r);
     assert.ok(r.from.length >= cfg.graph.candidate_min_links);
