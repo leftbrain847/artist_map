@@ -104,9 +104,9 @@ export async function lastfmData(names, apiKey, cfg, fetchFn = fetch, pause = sl
   const tags = {};
   for (const { key, name } of names) {
     const s = await lastfm('artist.getsimilar', name, apiKey, cfg, fetchFn);
-    similar[key] = (s?.similarartists?.artist ?? []).map((a) => ({ name: a.name, match: Number(a.match) }));
+    similar[key] = [].concat(s?.similarartists?.artist ?? []).map((a) => ({ name: a.name, match: Number(a.match) }));
     const t = await lastfm('artist.gettoptags', name, apiKey, cfg, fetchFn);
-    tags[key] = (t?.toptags?.tag ?? []).slice(0, 5).map((x) => x.name);
+    tags[key] = [].concat(t?.toptags?.tag ?? []).slice(0, 5).map((x) => x.name);
     await pause(cfg.lastfm.pause_ms);
   }
   return { similar, tags };

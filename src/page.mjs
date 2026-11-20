@@ -153,9 +153,9 @@ const VIEW_JS = `function mountMap(D, P) {
   addEventListener('resize', size); size(); draw();
 }`;
 // Pages may run inline code and talk only to the hosts listed; nothing loads from anywhere else.
-const CSP = (connect = []) => `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src ${connect.length ? connect.join(' ') : "'none'"}; base-uri 'none'; form-action 'none'`;
+const CSP = (connect = []) => `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'none'; connect-src ${connect.length ? connect.join(' ') : "'none'"}; base-uri 'none'; form-action 'none'`;
 
-export function renderMap(data, cfg) {
+export function renderMap(data, cfg, visitorsOpen = false) {
   const pg = cfg.page;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -164,7 +164,7 @@ export function renderMap(data, cfg) {
 <style>${BASE_CSS}${MAP_CSS}</style></head><body>
 <header><h1>${esc(pg.title)}</h1><p>${esc(pg.subtitle)}</p></header>
 ${MAP_BODY}
-${cfg.visitor.enabled ? '<p class="yours"><a href="https://leftbrain847.github.io/artist_map/you.html">Map your own</a></p>' : ''}
+${cfg.visitor.enabled && visitorsOpen ? `<p class="yours"><a href="${esc(cfg.visitor.url)}">Map your own</a></p>` : ''}
 <script id="data" type="application/json">${jsonForScript(data)}</script>
 <script id="cfg" type="application/json">${jsonForScript(pg)}</script>
 <script>
@@ -189,7 +189,7 @@ export function renderSetup(clientId, cfg) {
   go.onclick = (e) => {
     e.preventDefault();
     const state = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
-    try { sessionStorage.setItem('artist_map_state', state); } catch {}
+    try { sessionStorage.removeItem('artist_map_pkce'); sessionStorage.setItem('artist_map_state', state); } catch {}
     const u = new URL(a.base);
     u.search = new URLSearchParams({ client_id: a.client_id, response_type: 'code', redirect_uri: a.redirect_uri, scope: a.scope, state }).toString();
     location.href = u.toString();
@@ -221,7 +221,7 @@ export function renderCallback(cfg, clientId = '') {
     fetch(A.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: A.redirect_uri, client_id: A.client_id, code_verifier: pk.verifier }) })
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((j) => { sessionStorage.setItem('artist_map_token', JSON.stringify({ t: j.access_token, exp: Date.now() + (j.expires_in - 60) * 1000 })); location.replace('you.html'); })
+      .then((j) => { if (!j.access_token || !(j.expires_in > 0)) throw 0; sessionStorage.setItem('artist_map_token', JSON.stringify({ t: j.access_token, exp: Date.now() + (j.expires_in - 60) * 1000 })); location.replace('you.html'); })
       .catch(() => location.replace('you.html#signin_failed'));
     return;
   }
@@ -279,22 +279,28 @@ ${VIEW_JS}
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
     const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
     const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
-    sessionStorage.setItem('artist_map_pkce', JSON.stringify({ verifier, state }));
+    try { sessionStorage.removeItem('artist_map_state'); sessionStorage.setItem('artist_map_pkce', JSON.stringify({ verifier, state })); }
+    catch { return say('This browser blocks the storage sign-in needs. Try another browser.'); }
     const u = new URL(A.authorize);
     u.search = new URLSearchParams({ client_id: A.client_id, response_type: 'code', redirect_uri: A.redirect_uri, scope: A.scope, state, code_challenge_method: 'S256', code_challenge: challenge }).toString();
     location.href = u.toString();
   }
   const signInBtn = { label: 'Sign in with Spotify', go: signIn };
   if (!A.client_id || !A.key) return say('Not open yet.');
-  let tok = null; try { tok = JSON.parse(sessionStorage.getItem('artist_map_token') || 'null'); } catch {}
+  // Read the token once and drop it from storage, so no other page on this origin can pick it up.
+  let tok = null; try { tok = JSON.parse(sessionStorage.getItem('artist_map_token') || 'null'); sessionStorage.removeItem('artist_map_token'); } catch {}
   if (!tok || tok.exp < Date.now()) {
     if (location.hash === '#signin_failed') return say('Sign-in did not finish. Try again.', signInBtn);
     return say('Invited listeners: sign in to map your saved artists. Nothing is stored; it all happens in this tab.', signInBtn);
   }
-  const sp = async (path) => {
+  const sp = async (path, tries = 0) => {
     const r = await fetch(path.startsWith('http') ? path : A.api + path, { headers: { Authorization: 'Bearer ' + tok.t } });
     if (r.status === 403) throw new Error('invite');
-    if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 2000)); return sp(path); }
+    if (r.status === 429) {
+      const wait = (Number(r.headers.get('Retry-After')) || 2) * 1000;
+      if (tries >= A.v.max_retries || wait > 30000) throw new Error('busy');
+      await new Promise((ok) => setTimeout(ok, wait)); return sp(path, tries + 1);
+    }
     if (!r.ok) throw new Error('spotify ' + r.status);
     return r.json();
   };
@@ -305,7 +311,7 @@ ${VIEW_JS}
   };
   (async () => {
     say('Reading your library…');
-    const lib = new Map(), add = (a, w) => { if (!a || !a.name) return; const c = lib.get(a.name) || { name: a.name, weight: 0 }; c.weight += w; lib.set(a.name, c); };
+    const lib = new Map(), add = (a, w) => { if (!a || !a.name) return; const k = keyOf(a.name), c = lib.get(k) || { name: a.name, weight: 0 }; c.weight += w; lib.set(k, c); };
     let next = '/me/tracks?limit=50', seen = 0;
     while (next && seen < A.v.track_limit) { const p = await sp(next); (p.items || []).forEach((it) => ((it.track && it.track.artists) || []).forEach((a) => add(a, A.weights.saved_track))); seen += (p.items || []).length; next = p.next; }
     next = '/me/following?type=artist&limit=50';
@@ -313,15 +319,20 @@ ${VIEW_JS}
     for (const r of A.top_ranges) { const p = await sp('/me/top/artists?time_range=' + r + '&limit=50'); (p.items || []).forEach((a) => add(a, A.weights.top[r] || 1)); }
     const top = [...lib.values()].sort((a, b) => b.weight - a.weight).slice(0, A.v.artist_limit);
     if (!top.length) return say('No saved artists found on this account yet.');
-    const similar = {}, tags = {}; let done = 0;
+    const similar = {}, tags = {}; let done = 0, failed = 0;
+    const list = (x) => [].concat(x == null ? [] : x);
     const queue = top.slice();
     const worker = async () => { for (let a; (a = queue.shift());) {
       const k = keyOf(a.name);
-      const s = await lf('artist.getsimilar', a.name); similar[k] = ((s && s.similarartists && s.similarartists.artist) || []).map((x) => ({ name: x.name, match: Number(x.match) }));
-      const t = await lf('artist.gettoptags', a.name); tags[k] = ((t && t.toptags && t.toptags.tag) || []).slice(0, 5).map((x) => x.name);
+      const s = await lf('artist.getsimilar', a.name); if (!s) failed++;
+      similar[k] = list(s && s.similarartists && s.similarartists.artist).map((x) => ({ name: x.name, match: Number(x.match) }));
+      const t = await lf('artist.gettoptags', a.name);
+      tags[k] = list(t && t.toptags && t.toptags.tag).slice(0, 5).map((x) => x.name);
+      await new Promise((ok) => setTimeout(ok, A.lastfm.pause_ms));
       say('Linking artists… ' + (++done) + ' of ' + top.length);
     } };
     await Promise.all(Array.from({ length: A.v.concurrency }, worker));
+    if (failed > top.length / 2) return say('Last.fm is busy right now. Try again in a few minutes.', signInBtn);
     say('Arranging the map…');
     await new Promise((ok) => setTimeout(ok, 30));
     const g = buildGraph({ library: top, similar, tags }, { graph: A.graph, lastfm: A.lastfm });
@@ -330,6 +341,7 @@ ${VIEW_JS}
   })().catch((e) => {
     sessionStorage.removeItem('artist_map_token');
     if (e.message === 'invite') say('This map is invite-only for now: your Spotify account is not on the list.');
+    else if (e.message === 'busy') say('Spotify is busy right now. Try again in a few minutes.', signInBtn);
     else say('Something went wrong reading your library. Try again.', signInBtn);
   });
 })();
