@@ -23,12 +23,18 @@ section{max-width:460px;margin:0 auto;padding:18px 22px 8px}h2{font-weight:300;f
 ol{list-style:none;margin:0;padding:0}li{padding:10px 2px;border-top:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column}li:last-child{border-bottom:1px solid rgba(255,255,255,.05)}
 li button{font-size:15px;color:#e6e9ff}li small{color:var(--dim);font-size:12px;margin-top:2px}
 footer{padding:22px;color:#4a5072;font-size:11px;letter-spacing:.06em;text-align:center}button{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer}
-section:has(ol:empty){display:none}.yours{text-align:center;margin:0 0 26px;font-size:12px;letter-spacing:.14em;text-transform:uppercase}.yours a{color:var(--dim);text-decoration:none;border-bottom:1px solid #2a3050;padding-bottom:3px}
+section:has(ol:empty){display:none}
+#filters{max-width:360px;margin:6px auto 0;padding:0 22px;display:flex;flex-direction:column;gap:12px}#filters:empty{display:none}
+#filters label{display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:center}
+#filters input{-webkit-appearance:none;appearance:none;width:100%;height:2px;background:rgba(255,255,255,.12);border-radius:2px;outline:none}
+#filters input::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#e6e9ff;box-shadow:0 0 12px rgba(160,180,255,.6);border:0}
+#filters input::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#e6e9ff;border:0}.yours{text-align:center;margin:0 0 26px;font-size:12px;letter-spacing:.14em;text-transform:uppercase}.yours a{color:var(--dim);text-decoration:none;border-bottom:1px solid #2a3050;padding-bottom:3px}
 #status{text-align:center;color:var(--dim);font-size:13px;letter-spacing:.04em;padding:30vh 22px 0;position:absolute;inset:0;pointer-events:none}
 .pill{display:inline-block;pointer-events:auto;margin-top:16px;padding:11px 22px;border-radius:999px;border:1px solid rgba(255,255,255,.14);color:#e6e9ff;letter-spacing:.12em;text-transform:uppercase;font-size:12px;background:rgba(255,255,255,.03);cursor:pointer}
 `;
 const MAP_BODY = `<div id="wrap"><canvas id="c"></canvas><div id="info"></div></div>
 <div id="legend"></div>
+<div id="filters"></div>
 <section><h2>To try</h2><ol id="recs"></ol></section>
 <footer id="foot"></footer>`;
 const VIEW_JS = `function mountMap(D, P) {
@@ -37,7 +43,9 @@ const VIEW_JS = `function mountMap(D, P) {
   const nbrs = D.nodes.map(() => []);
   D.edges.forEach(([i, j]) => { nbrs[i].push(j); nbrs[j].push(i); });
   let yaw = 0.6, pitch = -0.25, zoom = 1, sel = -1, drag = null, pinch = null, idle = 0, W = 0, H = 0, dpr = 1;
-  const labelled = new Set(D.nodes.map((n, i) => [n.w, i]).sort((a, b) => b[0] - a[0]).slice(0, P.label_top).map(([, i]) => i));
+  // Filters: which artists are on screen. Recommendations stay while any artist they come from is shown.
+  const vis = D.nodes.map(() => true);
+  let labelled = new Set(), regions = [], shown = D.nodes.length;
 
   function size() { dpr = Math.min(2, devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; }
   function project(p) {
@@ -48,9 +56,9 @@ const VIEW_JS = `function mountMap(D, P) {
     return [W / 2 + x * f, H / 2 + y * f, z, f];
   }
   let proj = [];
-  // Each genre region is a soft glowing cloud around its artists; edges only show for the tapped artist.
-  const regions = D.tags.map((t, k) => {
-    const pts = D.nodes.filter((n) => n.t === k && !n.r).map((n) => n.p);
+  // Each genre region is a soft glowing cloud around its shown artists; edges only show for the tapped artist.
+  const computeRegions = () => D.tags.map((t, k) => {
+    const pts = D.nodes.filter((n, i) => vis[i] && n.t === k && !n.r).map((n) => n.p);
     if (!pts.length) return null;
     const c = [0, 1, 2].map((d) => pts.reduce((a, p) => a + p[d], 0) / pts.length);
     const spread = Math.sqrt(pts.reduce((a, p) => a + (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2, 0) / pts.length) || 10;
@@ -67,24 +75,27 @@ const VIEW_JS = `function mountMap(D, P) {
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
     proj = D.nodes.map((n) => project(n.p));
     const faded = sel >= 0 ? 0.35 : 1;
+    const crowd = Math.min(1, Math.sqrt(P.crowd_nodes / Math.max(1, shown)));  // dots shrink as more artists are shown
     cx.globalCompositeOperation = 'lighter';
     for (const g of regions) {
       const p = project(g.c);
       glow(p[0], p[1], g.spread * p[3] * P.region_scale, P.palette[g.k % P.palette.length], P.region_alpha * faded);
     }
-    D.nodes.forEach((n, i) => {
-      const p = proj[i], r = (P.point_min + (P.point_max - P.point_min) * n.w) * p[3];
+    if (shown <= P.halo_max_nodes) D.nodes.forEach((n, i) => {
+      if (!vis[i]) return;
+      const p = proj[i], r = (P.point_min + (P.point_max - P.point_min) * n.w) * p[3] * crowd;
       glow(p[0], p[1], r * P.halo_scale, colour(n), P.halo_alpha * faded);
     });
     cx.globalCompositeOperation = 'source-over';
     if (sel >= 0) {
       cx.lineWidth = 0.8; cx.strokeStyle = 'rgba(255,255,255,.55)';
-      for (const j of nbrs[sel]) { cx.beginPath(); cx.moveTo(proj[sel][0], proj[sel][1]); cx.lineTo(proj[j][0], proj[j][1]); cx.stroke(); }
+      for (const j of nbrs[sel]) { if (!vis[j]) continue; cx.beginPath(); cx.moveTo(proj[sel][0], proj[sel][1]); cx.lineTo(proj[j][0], proj[j][1]); cx.stroke(); }
     }
     const order = proj.map((p, i) => [p[2], i]).sort((a, b) => b[0] - a[0]);
     const placed = [];  // labels that would overlap one already drawn are skipped
     for (const [, i] of order) {
-      const n = D.nodes[i], p = proj[i], r = (P.point_min + (P.point_max - P.point_min) * n.w) * p[3] * 0.6;
+      if (!vis[i]) continue;
+      const n = D.nodes[i], p = proj[i], r = (P.point_min + (P.point_max - P.point_min) * n.w) * p[3] * 0.6 * crowd;
       const dim = sel >= 0 && i !== sel && !nbrs[sel].includes(i);
       cx.globalAlpha = dim ? 0.2 : 0.95;
       cx.fillStyle = colour(n); cx.beginPath(); cx.arc(p[0], p[1], Math.max(1.2, r), 0, 7); cx.fill();
@@ -104,7 +115,7 @@ const VIEW_JS = `function mountMap(D, P) {
   }
   function pick(x, y) {
     let best = -1, bd = 24 * 24;
-    proj.forEach((p, i) => { const d = (p[0] - x) ** 2 + (p[1] - y) ** 2; if (d < bd) { bd = d; best = i; } });
+    proj.forEach((p, i) => { if (!vis[i]) return; const d = (p[0] - x) ** 2 + (p[1] - y) ** 2; if (d < bd) { bd = d; best = i; } });
     return best;
   }
   function show(i) {
@@ -112,11 +123,12 @@ const VIEW_JS = `function mountMap(D, P) {
     if (i < 0) { info.style.display = 'none'; return; }
     const n = D.nodes[i], b = D.because.find((x) => x.i === i);
     const tag = n.t >= 0 ? D.tags[n.t] : 'other';
-    const near = nbrs[i].slice(0, 6).map((j) => D.nodes[j].n);
+    const near = nbrs[i].filter((j) => vis[j]).slice(0, 6).map((j) => D.nodes[j].n);
+    const liked = n.s ? n.s + (n.s === 1 ? ' liked song' : ' liked songs') + (n.d ? ' since ' + n.d : '') : '';
     info.textContent = '';
     const h = document.createElement('div'); h.style.fontWeight = '600'; h.textContent = n.n; info.append(h);
     const t = document.createElement('div'); t.style.color = 'var(--dim)';
-    t.textContent = b ? 'to try · because of ' + b.from.map((j) => D.nodes[j].n).join(', ') : tag + (near.length ? ' · near ' + near.join(', ') : '');
+    t.textContent = b ? 'to try · because of ' + b.from.map((j) => D.nodes[j].n).join(', ') : [tag, liked, near.length ? 'near ' + near.join(', ') : ''].filter(Boolean).join(' · ');
     info.append(t); info.style.display = 'block';
   }
   cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId }; });
@@ -141,15 +153,43 @@ const VIEW_JS = `function mountMap(D, P) {
   const lg = document.getElementById('legend');
   D.tags.forEach((t, k) => { const s = document.createElement('span'); s.style.setProperty('--c', P.palette[k % P.palette.length]); s.textContent = t; lg.append(s); });
   const o = document.createElement('span'); o.style.setProperty('--c', P.rec_color); o.textContent = 'to try'; lg.append(o);
-  const ol = document.getElementById('recs');
+  const ol = document.getElementById('recs'), recLi = new Map();
   D.because.forEach((b) => {
-    const li = document.createElement('li'), btn = document.createElement('button'), sm = document.createElement('small');
+    const li = document.createElement('li'); recLi.set(b.i, li); const btn = document.createElement('button'), sm = document.createElement('small');
     btn.textContent = D.nodes[b.i].n; btn.onclick = () => { show(b.i); scrollTo({ top: 0, behavior: 'smooth' }); };
     sm.textContent = 'like ' + b.from.slice(0, 3).map((j) => D.nodes[j].n).join(', ');
     li.append(btn, sm); ol.append(li);
   });
-  const lib = D.nodes.filter((n) => !n.r).length;
-  document.getElementById('foot').textContent = lib + ' artists  ·  drag to turn, tap to explore' + (D.built ? '  ·  ' + D.built : '');
+  const foot = document.getElementById('foot');
+  function refilter(minSongs, sinceYear) {
+    D.nodes.forEach((n, i) => { if (!n.r) vis[i] = (n.s || 0) >= minSongs && (sinceYear === null || (!!n.d && +n.d.slice(0, 4) >= sinceYear)); });
+    D.because.forEach((b) => { vis[b.i] = b.from.some((j) => vis[j]); recLi.get(b.i).style.display = vis[b.i] ? '' : 'none'; });
+    shown = vis.filter(Boolean).length;
+    labelled = new Set(D.nodes.map((n, i) => [n.w, i]).filter(([, i]) => vis[i] && !D.nodes[i].r).sort((a, b) => b[0] - a[0]).slice(0, P.label_top).map(([, i]) => i));
+    regions = computeRegions();
+    if (sel >= 0) show(vis[sel] ? sel : -1);
+    const lib = D.nodes.filter((n, i) => vis[i] && !n.r).length;
+    foot.textContent = lib + ' artists  ·  drag to turn, tap to explore' + (D.built ? '  ·  ' + D.built : '');
+  }
+  // Two quiet sliders: how many of an artist's songs you've liked, and when you first liked them.
+  const fl = document.getElementById('filters'), withSongs = D.nodes.filter((n) => !n.r && 'n' in n && 's' in n);
+  let minSongs = 0, sinceYear = null;
+  if (fl && withSongs.length) {
+    const slider = (label, min, max, value, fmt, onInput) => {
+      const wrap = document.createElement('label'), out = document.createElement('span'), r = document.createElement('input');
+      r.type = 'range'; r.min = min; r.max = max; r.step = 1; r.value = value; r.setAttribute('aria-label', label);
+      out.textContent = fmt(+r.value); r.oninput = () => { out.textContent = fmt(+r.value); onInput(+r.value); };
+      wrap.append(out, r); fl.append(wrap);
+    };
+    const maxS = Math.min(P.songs_slider_max, Math.max(...withSongs.map((n) => n.s)));
+    if (maxS > 1) slider('Minimum liked songs', 0, maxS, 0, (v) => v === 0 ? 'every artist' : 'at least ' + v + ' liked song' + (v > 1 ? 's' : ''), (v) => { minSongs = v; refilter(minSongs, sinceYear); });
+    const years = withSongs.filter((n) => n.d).map((n) => +n.d.slice(0, 4));
+    if (years.length) {
+      const y0 = Math.min(...years), y1 = Math.max(...years);
+      if (y1 > y0) slider('First liked since', y0, y1, y0, (v) => v === y0 ? 'liked any time' : 'new to you since ' + v, (v) => { sinceYear = v === y0 ? null : v; refilter(minSongs, sinceYear); });
+    }
+  }
+  refilter(minSongs, sinceYear);
   addEventListener('resize', size); size(); draw();
 }`;
 // Pages may run inline code and talk only to the hosts listed; nothing loads from anywhere else.
@@ -311,9 +351,13 @@ ${VIEW_JS}
   };
   (async () => {
     say('Reading your library…');
-    const lib = new Map(), add = (a, w) => { if (!a || !a.name) return; const k = keyOf(a.name), c = lib.get(k) || { name: a.name, weight: 0 }; c.weight += w; lib.set(k, c); };
+    const lib = new Map(), add = (a, w, at) => {
+      if (!a || !a.name) return; const k = keyOf(a.name), c = lib.get(k) || { name: a.name, weight: 0, songs: 0, first: null }; c.weight += w;
+      if (at) { c.songs++; const m = String(at).slice(0, 7); if (/^[0-9]{4}-[0-9]{2}$/.test(m) && (!c.first || m < c.first)) c.first = m; }
+      lib.set(k, c);
+    };
     let next = '/me/tracks?limit=50', seen = 0;
-    while (next && seen < A.v.track_limit) { const p = await sp(next); (p.items || []).forEach((it) => ((it.track && it.track.artists) || []).forEach((a) => add(a, A.weights.saved_track))); seen += (p.items || []).length; next = p.next; }
+    while (next && seen < A.v.track_limit) { const p = await sp(next); (p.items || []).forEach((it) => ((it.track && it.track.artists) || []).forEach((a) => add(a, A.weights.saved_track, it.added_at))); seen += (p.items || []).length; next = p.next; }
     next = '/me/following?type=artist&limit=50';
     while (next) { const p = (await sp(next)).artists || {}; (p.items || []).forEach((a) => add(a, A.weights.followed)); next = p.next; }
     for (const r of A.top_ranges) { const p = await sp('/me/top/artists?time_range=' + r + '&limit=50'); (p.items || []).forEach((a) => add(a, A.weights.top[r] || 1)); }

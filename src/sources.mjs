@@ -54,10 +54,16 @@ export async function spotifyLibrary(accessToken, cfg, fetchFn = fetch) {
   const init = { headers: { Authorization: `Bearer ${accessToken}` } };
   const get = (path) => getJson(fetchFn, path.startsWith('http') ? path : s.api + path, init, s.max_retries);
   const lib = new Map();
-  const add = (a, weight) => {
+  // songs = saved songs by this artist; first = month of the earliest save (YYYY-MM).
+  const add = (a, weight, addedAt = null) => {
     if (!a?.name) return;
-    const cur = lib.get(a.name) ?? { name: a.name, weight: 0 };
+    const cur = lib.get(a.name) ?? { name: a.name, weight: 0, songs: 0, first: null };
     cur.weight += weight;
+    if (addedAt) {
+      cur.songs += 1;
+      const m = String(addedAt).slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(m) && (!cur.first || m < cur.first)) cur.first = m;
+    }
     lib.set(a.name, cur);
   };
 
@@ -65,7 +71,7 @@ export async function spotifyLibrary(accessToken, cfg, fetchFn = fetch) {
   let seen = 0;
   while (next && seen < s.saved_tracks_max) {
     const page = await get(next);
-    for (const item of page.items ?? []) for (const a of item.track?.artists ?? []) add(a, w.saved_track);
+    for (const item of page.items ?? []) for (const a of item.track?.artists ?? []) add(a, w.saved_track, item.added_at);
     seen += page.items?.length ?? 0;
     next = page.next;
   }

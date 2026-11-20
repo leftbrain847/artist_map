@@ -134,3 +134,23 @@ test('visitor page: stays closed when the page key is missing or reuses the nigh
   await build({ fixture, outDir: dir, env: { SPOTIFY_CLIENT_ID: 'id', LASTFM_API_KEY: 'samekey123', LASTFM_PAGE_KEY: 'samekey123' } });
   assert.ok(!readFileSync(join(dir, 'you.html'), 'utf8').includes('samekey123'));
 });
+
+test('song counts and first-liked months reach the page, and nothing finer than a month', async () => {
+  const cfgPages = { ...cfg };
+  const pages = {
+    '/me/tracks?limit=50': { items: [
+      { added_at: '2024-03-09T21:14:00Z', track: { artists: [{ name: 'A' }] } },
+      { added_at: '2019-11-30T08:00:00Z', track: { artists: [{ name: 'A' }, { name: 'B' }] } },
+    ], next: null },
+    '/me/following?type=artist&limit=50': { artists: { items: [{ name: 'C' }], next: null } },
+  };
+  const f = async (url) => { const u = new URL(url); return res(pages[u.pathname.replace('/v1', '') + u.search] ?? { items: [] }); };
+  const lib = Object.fromEntries((await spotifyLibrary('acc', cfgPages, f)).map((a) => [a.name, a]));
+  assert.equal(lib.A.songs, 2); assert.equal(lib.A.first, '2019-11');
+  assert.equal(lib.C.songs, 0); assert.equal(lib.C.first, null);
+  const g = buildGraph({ library: Object.values(lib), similar: {}, tags: {} }, cfg);
+  const a = g.nodes.find((n) => n.n === 'A');
+  assert.deepEqual([a.s, a.d], [2, '2019-11']);
+  assert.ok(!JSON.stringify(g).includes('T21:14'), 'no day or time');
+  assert.throws(() => assertPublicSafe({ ...g, nodes: [{ ...a, d: '2019-11-30' }] }), /not a month/);
+});

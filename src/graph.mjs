@@ -8,7 +8,7 @@ export function buildGraph({ library, similar, tags }, cfg) {
   const minMatch = cfg.lastfm.min_match;
   const lib = [...library].sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name)).slice(0, g.max_library_nodes);
   const maxW = Math.max(1, ...lib.map((a) => a.weight));
-  const nodes = lib.map((a) => ({ name: a.name, key: keyOf(a.name), w: a.weight / maxW, rec: false }));
+  const nodes = lib.map((a) => ({ name: a.name, key: keyOf(a.name), w: a.weight / maxW, rec: false, songs: a.songs ?? 0, first: a.first ?? null }));
   const index = new Map(nodes.map((n, i) => [n.key, i]));
 
   const edges = new Map(); // "i|j" -> match
@@ -57,7 +57,7 @@ export function buildGraph({ library, similar, tags }, cfg) {
   const edgeList = [...edges.entries()].map(([k, m]) => { const [i, j] = k.split('|').map(Number); return [i, j, m]; });
   const pos = layout(nodes, edgeList, g);
   return {
-    nodes: nodes.map((n, i) => ({ n: n.name, w: round(n.w), t: n.t, r: n.rec, p: pos[i].map(round) })),
+    nodes: nodes.map((n, i) => ({ n: n.name, w: round(n.w), t: n.t, r: n.rec, p: pos[i].map(round), ...(n.rec ? {} : { s: n.songs, ...(n.first ? { d: n.first } : {}) }) })),
     edges: edgeList.map(([i, j, m]) => [i, j, round(m)]),
     tags: top,
     because,
