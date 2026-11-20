@@ -167,7 +167,7 @@ const VIEW_JS = `function mountMap(D, P) {
     shown = vis.filter(Boolean).length;
     labelled = new Set(D.nodes.map((n, i) => [n.w, i]).filter(([, i]) => vis[i] && !D.nodes[i].r).sort((a, b) => b[0] - a[0]).slice(0, P.label_top).map(([, i]) => i));
     regions = computeRegions();
-    if (sel >= 0 && !vis[sel]) show(-1);
+    if (sel >= 0) show(vis[sel] ? sel : -1);
     const lib = D.nodes.filter((n, i) => vis[i] && !n.r).length;
     foot.textContent = lib + ' artists  ·  drag to turn, tap to explore' + (D.built ? '  ·  ' + D.built : '');
   }

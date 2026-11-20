@@ -15,7 +15,7 @@ export function assertPublicSafe(data) {
     for (const k of Object.keys(nd)) if (!ALLOWED.node.includes(k)) bad(`unexpected node field "${k}"`);
     if (typeof nd.n !== 'string' || nd.n.length > 120) bad('artist name is not a short string');
     if ('s' in nd && !(Number.isInteger(nd.s) && nd.s >= 0)) bad('song count is not a whole number');
-    if ('d' in nd && !/^\d{4}-\d{2}$/.test(nd.d)) bad('first-liked is not a month');
+    if ('d' in nd && !(typeof nd.d === 'string' && /^\d{4}-\d{2}$/.test(nd.d))) bad('first-liked is not a month');
   }
   for (const b of data.because) for (const k of Object.keys(b)) if (!ALLOWED.because.includes(k)) bad(`unexpected field "${k}"`);
   for (const e of data.edges) if (e.length !== 3 || !e.every((x) => typeof x === 'number')) bad('edge is not [i, j, match]');
