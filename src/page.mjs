@@ -33,6 +33,7 @@ footer{padding:22px;color:#4a5072;font-size:11px;letter-spacing:.06em;text-align
 .chip.add{opacity:.55;border-style:dashed}.chip.add:before{box-shadow:none}.chip.more{color:var(--dim);border-style:dashed}.chip.more:before{display:none}
 #legend .hint{font-size:11px;color:var(--dim);letter-spacing:.06em}
 #info .spot{display:inline-block;margin-top:10px;padding:6px 14px;border-radius:999px;border:1px solid rgba(29,185,84,.5);color:#1ed760;font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
+.lost{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);display:none;padding:10px 20px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(14,17,28,.8);color:#e6e9ff;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
 #info .x{position:absolute;top:6px;right:10px;font-size:18px;color:var(--dim);padding:2px 6px}
 #view{display:flex;align-items:center;justify-content:center;gap:10px;max-width:380px;margin:4px auto 8px;padding:0 18px}
 .vbtn{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.1);color:var(--fg);text-align:center;font-size:14px;line-height:1;flex:none}
@@ -137,7 +138,9 @@ const VIEW_JS = `function mountMap(D, P) {
   // A free camera: it sits somewhere in the map and looks one way. One finger turns it, pinching flies it
   // toward (or away from) the point between your fingers, two fingers slide it, twisting rolls it.
   let yaw = 0.4, pitch = -0.12, roll = 0, spin = true, drag = null, pinch = null, twist = null, mid = null, touches = 0, W = 0, H = 0, dpr = 1, proj = [];
-  let C = [0, 0, -220], dist = 220, goal = null, F = 300;
+  let C = [0, 0, -220], dist = 220, goal = null, F = 300, lost = 0;
+  const lostBtn = document.createElement('button'); lostBtn.className = 'lost'; lostBtn.textContent = 'Back to the map';
+  lostBtn.onclick = () => { roll = 0; syncRoll(); frame(); lost = 0; }; document.getElementById('wrap').append(lostBtn);
   const toWorld = (a, b, c) => {
     const cr = Math.cos(roll), sr = Math.sin(roll), cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw);
     const x1 = a * cr + b * sr, y2 = -a * sr + b * cr;
@@ -185,7 +188,7 @@ const VIEW_JS = `function mountMap(D, P) {
   }
   function turn(dx, dy) {
     goal = null;
-    yaw -= dx * 0.005; pitch = Math.max(-1.45, Math.min(1.45, pitch - dy * 0.005));
+    yaw -= dx * P.turn_speed; pitch = Math.max(-1.45, Math.min(1.45, pitch - dy * P.turn_speed));
   }
   const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return 'rgba(' + (v >> 16) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ',' + a + ')'; };
   function glow(x, y, r, hex, a) {
@@ -209,7 +212,12 @@ const VIEW_JS = `function mountMap(D, P) {
     proj = N.map((n) => project(n.p));
     const faded = sel >= 0 ? 0.3 : 1, crowd = Math.min(1, Math.sqrt(P.crowd_nodes / Math.max(1, shown)));
     cx.globalCompositeOperation = 'screen';
-    for (const g of regions) { const p = project(g.c); if (p[3]) glow(p[0], p[1], Math.min(W, g.spread * p[3] * P.region_scale), P.palette[g.k % P.palette.length], P.region_alpha * faded); }
+    // Clouds fade as you fly into them, so getting close never washes the screen out.
+    for (const g of regions) {
+      const p = project(g.c); if (!p[3]) continue;
+      const rad = g.spread * p[3] * P.region_scale, inside = Math.min(1, (W * 0.5) / Math.max(1, rad));
+      glow(p[0], p[1], Math.min(W * 0.9, rad), P.palette[g.k % P.palette.length], P.region_alpha * faded * inside);
+    }
     cx.globalCompositeOperation = 'source-over';
     if (sel >= 0 && proj[sel][3]) {
       cx.lineWidth = 0.7;
@@ -236,6 +244,10 @@ const VIEW_JS = `function mountMap(D, P) {
       }
     }
     cx.globalAlpha = 1;
+    // If nothing is on screen (you've flown off or turned away), offer a way back.
+    const onScreen = proj.some((p, i) => vis[i] && p[3] && p[0] > 0 && p[0] < W && p[1] > 0 && p[1] < H);
+    lost = onScreen ? 0 : lost + 1;
+    lostBtn.style.display = lost > 40 ? 'block' : 'none';
     if (sel < 0) for (const g of regions) {
       if (!g.name) continue;
       const p = project(g.c); if (!p[3]) continue;
